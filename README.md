@@ -21,7 +21,8 @@ Spring Boot 프로젝트의 데이터베이스 스키마 조회 및 쿼리 실�
 
 - ✅ MySQL / MariaDB
 - ✅ PostgreSQL
-- ⚠️ H2 (TCP 모드만 지원, 임베디드/메모리 모드는 외부 접근 불가)
+- ✅ MsSQL
+- ✅ SQLite
 
 ---
 
@@ -231,6 +232,35 @@ spring:
     username: ${DB_USER:admin}
     password: ${DB_PASSWORD}
 ```
+
+### SQLite 설정
+
+**파일 기반 SQLite:**
+```yaml
+spring:
+  datasource:
+    url: jdbc:sqlite:./data/myapp.db
+    driver-class-name: org.sqlite.JDBC
+```
+
+또는 절대 경로:
+```yaml
+spring:
+  datasource:
+    url: jdbc:sqlite:/Users/username/projects/myapp/data/app.db
+    driver-class-name: org.sqlite.JDBC
+```
+
+**💡 SQLite 특징:**
+- ✅ jar 파일 불필요 (Python 기본 내장 `sqlite3` 모듈 사용)
+- ✅ 파일 기반 DB로 별도 서버 실행 불필요
+- ✅ 테스트 및 개발 환경에 최적
+- ✅ 인덱스 정보 및 실행계획 분석 모두 지원
+- ✅ **상대 경로 자동 해석**: `./build/app.db` 같은 상대 경로는 프로젝트 루트 기준으로 자동 해석됩니다
+
+**⚙️ 경로 해석 방식:**
+- `application.yml`이 `src/main/resources/application.yml`에 위치한 경우, 프로젝트 루트를 자동으로 찾아 상대 경로를 해석합니다
+- 예: `jdbc:sqlite:./build/app.db` → `/project-root/build/app.db`로 변환
 
 ## 🔐 Jasypt 암호화 지원
 

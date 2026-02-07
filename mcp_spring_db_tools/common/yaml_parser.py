@@ -23,6 +23,7 @@ class DataSourceConfig:
     password: str
     driver_class: str
     db_type: str  # mysql, postgresql, h2, oracle, etc.
+    base_path: str = None  # Project root for resolving relative paths (e.g., SQLite files)
     
     @property
     def host(self) -> str:
@@ -115,6 +116,15 @@ class DataSourceConfig:
             result['database'] = db_name if db_name else ''
             return result
         
+        # SQLite pattern
+        # jdbc:sqlite:/path/to/database.db or jdbc:sqlite:./relative/path.db
+        sqlite_match = re.match(r'jdbc:sqlite:(.+)', url)
+        if sqlite_match:
+            result['host'] = 'file'
+            result['port'] = 0
+            result['database'] = sqlite_match.group(1)
+            return result
+        
         return result
 
 
@@ -138,6 +148,16 @@ class ApplicationYamlParser:
         
         if not self.yaml_path.exists():
             raise FileNotFoundError(f"application.yml not found: {yaml_path}")
+        
+        # Calculate project root (assuming application.yml is in src/main/resources)
+        # Go up 3 levels: resources -> main -> src -> project_root
+        # If not in standard location, use the parent directory
+        potential_root = self.yaml_path.parent.parent.parent.parent
+        if potential_root.exists() and (potential_root / 'src').exists():
+            self.project_root = potential_root
+        else:
+            # Fallback: use the directory containing application.yml's parent
+            self.project_root = self.yaml_path.parent
     
     def _resolve_env_variables(self, value: str) -> str:
         """
@@ -203,6 +223,8 @@ class ApplicationYamlParser:
             return 'postgresql'
         elif 'h2' in url_lower or 'h2' in driver_lower:
             return 'h2'
+        elif 'sqlite' in url_lower or 'sqlite' in driver_lower:
+            return 'sqlite'
         elif 'oracle' in url_lower or 'oracle' in driver_lower:
             return 'oracle'
         elif 'mariadb' in url_lower or 'mariadb' in driver_lower:
@@ -236,7 +258,8 @@ class ApplicationYamlParser:
             username=username,
             password=password,
             driver_class=driver_class,
-            db_type=db_type
+            db_type=db_type,
+            base_path=str(self.project_root)
         )
     
     def parse(self) -> list[DataSourceConfig]:

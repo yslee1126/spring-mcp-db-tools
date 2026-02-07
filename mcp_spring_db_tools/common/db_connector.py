@@ -652,6 +652,152 @@ class H2Connector(DatabaseConnector):
             cursor.close()
 
 
+class SQLiteConnector(DatabaseConnector):
+    """SQLite database connector (using Python's built-in sqlite3)."""
+    
+    def connect(self):
+        """
+        Connect to SQLite database.
+        SQLite files are accessed directly without network connection.
+        """
+        import sqlite3
+        import os
+        from pathlib import Path
+        
+        # Extract database path from URL
+        # Format: jdbc:sqlite:/path/to/db.db or jdbc:sqlite:./relative/path.db
+        db_path = self.config.database
+        if self.config.url and 'jdbc:sqlite:' in self.config.url:
+            db_path = self.config.url.replace('jdbc:sqlite:', '')
+        
+        # Resolve relative paths using base_path (project root)
+        if db_path and not os.path.isabs(db_path):
+            # Relative path - resolve using base_path
+            if self.config.base_path:
+                db_path = os.path.join(self.config.base_path, db_path)
+            else:
+                # Fallback to current working directory
+                db_path = os.path.abspath(db_path)
+        
+        # Expand user home directory if present
+        db_path = os.path.expanduser(db_path)
+        
+        # Check if database file exists (create parent directories if needed for new databases)
+        db_path_obj = Path(db_path)
+        if not db_path_obj.exists():
+            # Create parent directories if they don't exist
+            db_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        
+        self._connection = sqlite3.connect(db_path)
+        self._connection.row_factory = sqlite3.Row  # Enable column access by name
+    
+    def disconnect(self):
+        if self._connection:
+            self._connection.close()
+            self._connection = None
+    
+    def get_schema_info(self) -> dict:
+        """Get SQLite schema information."""
+        schema_info = {
+            'database': self.config.database,
+            'tables': []
+        }
+        
+        cursor = self._connection.cursor()
+        
+        # Get all tables (excluding internal sqlite tables)
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+        """)
+        tables = cursor.fetchall()
+        
+        for table_row in tables:
+            table_name = table_row['name']
+            table_info = {
+                'name': table_name,
+                'comment': None,  # SQLite doesn't support table comments
+                'columns': [],
+                'indexes': [],
+                'foreign_keys': []
+            }
+            
+            # Get columns using PRAGMA
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = cursor.fetchall()
+            
+            for col in columns:
+                table_info['columns'].append({
+                    'name': col['name'],
+                    'type': col['type'],
+                    'nullable': not col['notnull'],
+                    'default': col['dflt_value'],
+                    'key': 'PRI' if col['pk'] else '',
+                    'comment': None  # SQLite doesn't support column comments
+                })
+            
+            # Get indexes
+            cursor.execute(f"PRAGMA index_list({table_name})")
+            indexes = cursor.fetchall()
+            
+            for idx in indexes:
+                # Get index columns
+                cursor.execute(f"PRAGMA index_info({idx['name']})")
+                idx_cols = cursor.fetchall()
+                
+                table_info['indexes'].append({
+                    'name': idx['name'],
+                    'unique': bool(idx['unique']),
+                    'columns': [col['name'] for col in idx_cols],
+                    'type': 'BTREE'  # SQLite primarily uses B-tree
+                })
+            
+            # Get foreign keys
+            cursor.execute(f"PRAGMA foreign_key_list({table_name})")
+            fks = cursor.fetchall()
+            
+            for fk in fks:
+                table_info['foreign_keys'].append({
+                    'name': f"fk_{table_name}_{fk['id']}",
+                    'column': fk['from'],
+                    'referenced_table': fk['table'],
+                    'referenced_column': fk['to']
+                })
+            
+            schema_info['tables'].append(table_info)
+        
+        cursor.close()
+        return schema_info
+    
+    def get_execution_plan(self, query: str) -> str:
+        """Get SQLite execution plan using EXPLAIN QUERY PLAN."""
+        cursor = self._connection.cursor()
+        
+        try:
+            # Use EXPLAIN QUERY PLAN for readable execution plan
+            cursor.execute(f"EXPLAIN QUERY PLAN {query}")
+            result = cursor.fetchall()
+            
+            lines = ["=" * 80, "EXECUTION PLAN", "=" * 80, ""]
+            
+            for row in result:
+                # SQLite EXPLAIN QUERY PLAN returns: id, parent, notused, detail
+                # We're interested in the detail column
+                detail = row[3] if len(row) > 3 else str(row)
+                lines.append(f"  {detail}")
+            
+            lines.append("")
+            lines.append("Index Usage Tips:")
+            lines.append("  - 'SCAN TABLE' = Full table scan (no index used, may be slow)")
+            lines.append("  - 'SEARCH TABLE ... USING INDEX' = Index is being used (optimized)")
+            lines.append("  - 'USING COVERING INDEX' = Best case, all data from index")
+            
+            return '\n'.join(lines)
+        finally:
+            cursor.close()
+
+
 def create_connector(config: DataSourceConfig) -> DatabaseConnector:
     """
     Factory function to create the appropriate database connector.
@@ -671,6 +817,7 @@ def create_connector(config: DataSourceConfig) -> DatabaseConnector:
         'postgresql': PostgreSQLConnector,
         'h2': H2Connector,
         'sqlserver': MSSQLConnector,
+        'sqlite': SQLiteConnector,
     }
     
     connector_class = connectors.get(config.db_type)

@@ -7,6 +7,7 @@ from .db_connector import (
     MySQLConnector,
     PostgreSQLConnector,
     H2Connector,
+    SQLiteConnector,
     create_connector
 )
 
@@ -18,5 +19,6 @@ __all__ = [
     'MySQLConnector',
     'PostgreSQLConnector',
     'H2Connector',
+    'SQLiteConnector',
     'create_connector'
 ]
