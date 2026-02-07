@@ -21,7 +21,6 @@ Spring Boot 프로젝트의 데이터베이스 스키마 조회 및 쿼리 실�
 
 - ✅ MySQL / MariaDB
 - ✅ PostgreSQL
-- ✅ Microsoft SQL Server (MSSQL)
 - ⚠️ H2 (TCP 모드만 지원, 임베디드/메모리 모드는 외부 접근 불가)
 
 ---
@@ -244,8 +243,6 @@ spring:
     password: ENC(Y7dT1gJ8nKoE4...)
 ```
 
-**지원 알고리즘:** PBEWithMD5AndDES (Jasypt 기본값)
-
 **MCP 설정에서 Jasypt 키 전달:**
 ```json
 {
@@ -257,33 +254,6 @@ spring:
 ```
 
 ---
-
-### Microsoft SQL Server (MSSQL)
-
-```yaml
-spring:
-  datasource:
-    url: jdbc:sqlserver://localhost:1433;databaseName=adventure
-    username: sa
-    password: password
-    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
-```
-
-## ❓ 문제 해결
-
-### Q: H2 데이터베이스 연결 오류가 발생합니다.
-**에러 메시지:** `Error getting schema for datasource 'primary': H2 embedded mode (file: or mem:) cannot be accessed externally.`
-
-**원인:**
-H2 데이터베이스가 `embedded` 모드(파일 또는 메모리)로 설정되어 있으면, Spring Boot 애플리케이션 외의 다른 프로세스(MCP 서버)에서 접근할 수 없습니다.
-
-**해결 방법:**
-1. **TCP 모드 사용 (권장):**
-   `application.yml`을 `jdbc:h2:tcp://localhost:9092/testdb` 형식으로 변경하고, H2 TCP 서버를 실행하세요.
-2. **Spring Boot H2 Console 사용:**
-   MCP 대신 브라우저에서 `http://localhost:8080/h2-console`에 접속하여 사용하세요.
-3. **다른 DB 사용:**
-   개발 편의를 위해 Docker로 MySQL이나 PostgreSQL을 실행하여 사용하는 것을 권장합니다.
 
 ## 📝 라이선스
 
