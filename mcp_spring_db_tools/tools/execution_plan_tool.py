@@ -68,9 +68,45 @@ def format_execution_plan_result(ds_name: str, query: str, plan: str) -> str:
     """
     query_preview = query[:200] + '...' if len(query) > 200 else query
     
+    improvement_guide = """
+쿼리 개선 가이드
+
+다음 항목들을 검토하여 쿼리 성능을 최적화하세요:
+
+1. 스캔 방식 최적화
+   - Full Table Scan은 위험합니다
+   - Index Full Scan이 차선책이지만 가능하면 Index Range Scan을 할 수 있는지 검토하세요
+   
+2. 인덱스 활용
+   - 복합 인덱스의 선행 컬럼이 조건절에 없는 경우 더 좋은 방안을 검토하세요
+   - 정렬 조건을 인덱스로 활용할 수 없는 경우 더 좋은 방안을 검토하세요
+   
+3. 조인 최적화
+   - 조인 순서가 작은 테이블부터가 아니라면 더 좋은 방안을 검토하세요
+   - LEFT JOIN이 너무 많아서 실행계획이 잘 안 풀리는 경우, 쿼리를 둘로 나눠서 
+     첫 번째 쿼리 결과를 두 번째 쿼리에 공급하는 방식으로 개선할 수 있는지 검토하세요
+   
+4. SELECT 절 최적화
+   - 너무 많은 컬럼을 SELECT한 경우 꼭 필요한 것인지 검토하세요
+   
+5. 쿼리 구문 최적화
+   - Function 사용, 컬럼 가공, 컬럼 타입 불일치 같은 구문이 쿼리를 무겁게 하는지 검토하세요
+   - 조건절에 %LIKE%, OR 조건 등 성능에 부정적인 구문을 없앨 수 있는지 검토하세요
+
+6. 개선 방안 제안
+위 항목들을 기반으로 다음과 같은 방법으로 개선 방안을 제안해주세요:
+- 쿼리 변경 (WHERE 절, JOIN 순서, SELECT 컬럼 등)
+- 다른 인덱스 추천 (기존 인덱스 중 더 효율적인 것)
+- 신규 인덱스 추가 (새로운 인덱스 생성 제안)
+- 힌트 추가 (데이터베이스 힌트를 통한 실행계획 조정)
+"""
+    
     return "\n".join([
         f"Datasource: {ds_name}",
         f"Query: {query_preview}",
         "",
-        plan
+        plan,
+        "",
+        "=" * 80,
+        improvement_guide
     ])
