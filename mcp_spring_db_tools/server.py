@@ -28,6 +28,8 @@ from .common.db_connector import create_connector, DatabaseConnector
 from .tools.schema_tool import get_schema_info, format_schema_info
 from .tools.execution_plan_tool import get_execution_plan, validate_query, format_execution_plan_result
 from .tools.datasource_tool import list_datasources
+from .tools.procedure_tool import get_procedures, format_procedures_info
+from .tools.view_tool import get_views, format_views_info
 
 # Configure logging
 logging.basicConfig(
@@ -46,6 +48,8 @@ class SpringDBToolsServer:
         1. get_schema_info: Get database schema including tables, columns, and indexes
         2. get_execution_plan: Get query execution plan for performance analysis
         3. list_datasources: List all configured datasources
+        4. get_procedures: Get stored procedures information
+        5. get_views: Get database views information
     """
     
     def __init__(
@@ -102,7 +106,7 @@ class SpringDBToolsServer:
                                 "type": "string",
                                 "description": (
                                     "Optional: Specific table name to get schema for. "
-                                    "Leave empty to get all tables."
+                                    "Supports LIKE '%%' wildcards. Leave empty to get all tables."
                                 )
                             }
                         },
@@ -145,6 +149,60 @@ class SpringDBToolsServer:
                         "properties": {},
                         "required": []
                     }
+                ),
+                Tool(
+                    name="get_procedures",
+                    description=(
+                        "Get stored procedures information from the database. "
+                        "Returns procedure names, definitions, and comments."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "datasource_name": {
+                                "type": "string",
+                                "description": (
+                                    "Name of the datasource to query. Use 'list' to see available datasources, "
+                                    "or leave empty to use the first/default datasource."
+                                )
+                            },
+                            "procedure_name": {
+                                "type": "string",
+                                "description": (
+                                    "Optional: Specific procedure name to get info for. "
+                                    "Supports LIKE '%%' wildcards. Leave empty to get all procedures."
+                                )
+                            }
+                        },
+                        "required": []
+                    }
+                ),
+                Tool(
+                    name="get_views",
+                    description=(
+                        "Get database views information. "
+                        "Returns view names and definitions."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "datasource_name": {
+                                "type": "string",
+                                "description": (
+                                    "Name of the datasource to query. Use 'list' to see available datasources, "
+                                    "or leave empty to use the first/default datasource."
+                                )
+                            },
+                            "view_name": {
+                                "type": "string",
+                                "description": (
+                                    "Optional: Specific view name to get info for. "
+                                    "Supports LIKE '%%' wildcards. Leave empty to get all views."
+                                )
+                            }
+                        },
+                        "required": []
+                    }
                 )
             ]
             return tools
@@ -166,6 +224,14 @@ class SpringDBToolsServer:
                         result = "Error: 'query' parameter is required"
                     else:
                         result = self._handle_get_execution_plan(datasource_name, query)
+                elif name == "get_procedures":
+                    datasource_name = (arguments or {}).get("datasource_name", "")
+                    procedure_name = (arguments or {}).get("procedure_name", "")
+                    result = self._handle_get_procedures(datasource_name, procedure_name)
+                elif name == "get_views":
+                    datasource_name = (arguments or {}).get("datasource_name", "")
+                    view_name = (arguments or {}).get("view_name", "")
+                    result = self._handle_get_views(datasource_name, view_name)
                 else:
                     result = f"Error: Unknown tool '{name}'"
                 
@@ -250,7 +316,7 @@ class SpringDBToolsServer:
             schema_info = get_schema_info(connector, table_name)
             
             if table_name and not schema_info.get('tables'):
-                return f"Table '{table_name}' not found in datasource '{ds_name}'"
+                return f"No tables found matching '{table_name}' in datasource '{ds_name}'"
             
             return format_schema_info(ds_name, schema_info)
             
@@ -272,6 +338,28 @@ class SpringDBToolsServer:
             
         except Exception as e:
             return f"Error getting execution plan for datasource '{ds_name}': {str(e)}"
+    
+    def _handle_get_procedures(self, datasource_name: str = "", procedure_name: str = "") -> str:
+        """Handle get_procedures tool call."""
+        ds_name, connector = self._get_connector(datasource_name)
+        
+        try:
+            proc_info = get_procedures(connector, procedure_name)
+            return format_procedures_info(ds_name, proc_info)
+            
+        except Exception as e:
+            return f"Error getting procedures for datasource '{ds_name}': {str(e)}"
+
+    def _handle_get_views(self, datasource_name: str = "", view_name: str = "") -> str:
+        """Handle get_views tool call."""
+        ds_name, connector = self._get_connector(datasource_name)
+        
+        try:
+            view_info = get_views(connector, view_name)
+            return format_views_info(ds_name, view_info)
+            
+        except Exception as e:
+            return f"Error getting views for datasource '{ds_name}': {str(e)}"
     
     async def run(self):
         """Run the MCP server using stdio transport."""

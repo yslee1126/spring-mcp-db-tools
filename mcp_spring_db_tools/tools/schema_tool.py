@@ -21,16 +21,7 @@ def get_schema_info(connector: "DatabaseConnector", table_name: str = "") -> dic
         Dictionary containing schema information
     """
     with connector.connection_context():
-        schema_info = connector.get_schema_info()
-        
-        # Filter by table name if specified
-        if table_name:
-            schema_info['tables'] = [
-                t for t in schema_info['tables'] 
-                if t['name'].lower() == table_name.lower()
-            ]
-        
-        return schema_info
+        return connector.get_schema_info(table_name)
 
 
 def format_schema_info(ds_name: str, schema_info: dict) -> str:

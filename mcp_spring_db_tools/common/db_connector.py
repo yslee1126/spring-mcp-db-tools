@@ -28,15 +28,44 @@ class DatabaseConnector(ABC):
         pass
     
     @abstractmethod
-    def get_schema_info(self) -> dict:
+    def get_schema_info(self, table_name: str = "") -> dict:
         """
         Get database schema information including tables, columns, and indexes.
         
+        Args:
+            table_name: Optional specific table name to query (supports wildcards)
+            
         Returns:
             Dictionary containing schema information
         """
         pass
     
+    @abstractmethod
+    def get_procedures_info(self, procedure_name: str = "") -> dict:
+        """
+        Get stored procedures information.
+        
+        Args:
+            procedure_name: Optional specific procedure name to query
+            
+        Returns:
+            Dictionary containing stored procedures information
+        """
+        pass
+
+    @abstractmethod
+    def get_views_info(self, view_name: str = "") -> dict:
+        """
+        Get views information.
+        
+        Args:
+            view_name: Optional specific view name to query
+            
+        Returns:
+            Dictionary containing views information
+        """
+        pass
+
     @abstractmethod
     def get_execution_plan(self, query: str) -> str:
         """
@@ -80,7 +109,7 @@ class MySQLConnector(DatabaseConnector):
             self._connection.close()
             self._connection = None
     
-    def get_schema_info(self) -> dict:
+    def get_schema_info(self, table_name: str = "") -> dict:
         """Get MySQL schema information."""
         schema_info = {
             'database': self.config.database,
@@ -88,13 +117,21 @@ class MySQLConnector(DatabaseConnector):
         }
         
         with self._connection.cursor() as cursor:
-            # Get all tables
-            cursor.execute("""
+            # Get tables
+            query = """
                 SELECT TABLE_NAME, TABLE_COMMENT, TABLE_ROWS, ENGINE
                 FROM INFORMATION_SCHEMA.TABLES
                 WHERE TABLE_SCHEMA = %s AND TABLE_TYPE = 'BASE TABLE'
-                ORDER BY TABLE_NAME
-            """, (self.config.database,))
+            """
+            params = [self.config.database]
+            
+            if table_name:
+                query += " AND TABLE_NAME LIKE %s"
+                params.append(table_name if '%' in table_name else table_name)
+                
+            query += " ORDER BY TABLE_NAME"
+            
+            cursor.execute(query, tuple(params))
             tables = cursor.fetchall()
             
             for table in tables:
@@ -171,6 +208,62 @@ class MySQLConnector(DatabaseConnector):
         
         return schema_info
     
+    def get_procedures_info(self, procedure_name: str = "") -> dict:
+        """Get MySQL stored procedures."""
+        procedures = []
+        with self._connection.cursor() as cursor:
+            # ROUTINE_DEFINITION might be null if user doesn't have privileges
+            query = """
+                SELECT ROUTINE_NAME, ROUTINE_DEFINITION, ROUTINE_COMMENT
+                FROM INFORMATION_SCHEMA.ROUTINES
+                WHERE ROUTINE_SCHEMA = %s AND ROUTINE_TYPE = 'PROCEDURE'
+            """
+            params = [self.config.database]
+            
+            if procedure_name:
+                query += " AND ROUTINE_NAME LIKE %s"
+                params.append(procedure_name if '%' in procedure_name else procedure_name)
+                
+            query += " ORDER BY ROUTINE_NAME"
+            
+            cursor.execute(query, tuple(params))
+            
+            for row in cursor.fetchall():
+                procedures.append({
+                    'name': row['ROUTINE_NAME'],
+                    'definition': row['ROUTINE_DEFINITION'],
+                    'comment': row['ROUTINE_COMMENT']
+                })
+        
+        return {'database': self.config.database, 'procedures': procedures}
+
+    def get_views_info(self, view_name: str = "") -> dict:
+        """Get MySQL views."""
+        views = []
+        with self._connection.cursor() as cursor:
+            query = """
+                SELECT TABLE_NAME, VIEW_DEFINITION
+                FROM INFORMATION_SCHEMA.VIEWS
+                WHERE TABLE_SCHEMA = %s
+            """
+            params = [self.config.database]
+            
+            if view_name:
+                query += " AND TABLE_NAME LIKE %s"
+                params.append(view_name if '%' in view_name else view_name)
+                
+            query += " ORDER BY TABLE_NAME"
+            
+            cursor.execute(query, tuple(params))
+            
+            for row in cursor.fetchall():
+                views.append({
+                    'name': row['TABLE_NAME'],
+                    'definition': row['VIEW_DEFINITION']
+                })
+        
+        return {'database': self.config.database, 'views': views}
+
     def get_execution_plan(self, query: str) -> str:
         """Get MySQL execution plan using EXPLAIN."""
         with self._connection.cursor() as cursor:
@@ -228,7 +321,7 @@ class PostgreSQLConnector(DatabaseConnector):
             self._connection.close()
             self._connection = None
     
-    def get_schema_info(self) -> dict:
+    def get_schema_info(self, table_name: str = "") -> dict:
         """Get PostgreSQL schema information."""
         import psycopg2.extras
         
@@ -238,15 +331,23 @@ class PostgreSQLConnector(DatabaseConnector):
         }
         
         with self._connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            # Get all tables
-            cursor.execute("""
+            # Get tables
+            query = """
                 SELECT t.table_name, 
                        obj_description((quote_ident(t.table_schema) || '.' || quote_ident(t.table_name))::regclass) as table_comment,
                        (SELECT reltuples::bigint FROM pg_class WHERE oid = (quote_ident(t.table_schema) || '.' || quote_ident(t.table_name))::regclass) as estimated_rows
                 FROM information_schema.tables t
                 WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
-                ORDER BY t.table_name
-            """)
+            """
+            params = []
+            
+            if table_name:
+                query += " AND t.table_name LIKE %s"
+                params.append(table_name if '%' in table_name else table_name)
+                
+            query += " ORDER BY t.table_name"
+            
+            cursor.execute(query, tuple(params))
             tables = cursor.fetchall()
             
             for table in tables:
@@ -338,6 +439,70 @@ class PostgreSQLConnector(DatabaseConnector):
         
         return schema_info
     
+    def get_procedures_info(self, procedure_name: str = "") -> dict:
+        """Get PostgreSQL stored procedures."""
+        import psycopg2.extras
+        
+        procedures = []
+        with self._connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            # Get functions/procedures from public schema
+            query = """
+                SELECT n.nspname as schema, p.proname as name, 
+                       pg_get_functiondef(p.oid) as definition,
+                       d.description as comment
+                FROM pg_proc p
+                JOIN pg_namespace n ON p.pronamespace = n.oid
+                LEFT JOIN pg_description d ON p.oid = d.objoid
+                WHERE n.nspname = 'public'
+            """
+            params = []
+            
+            if procedure_name:
+                query += " AND p.proname LIKE %s"
+                params.append(procedure_name if '%' in procedure_name else procedure_name)
+                
+            query += " ORDER BY p.proname"
+            
+            cursor.execute(query, tuple(params))
+            
+            for row in cursor.fetchall():
+                procedures.append({
+                    'name': row['name'],
+                    'definition': row['definition'],
+                    'comment': row['comment']
+                })
+        
+        return {'database': self.config.database, 'procedures': procedures}
+
+    def get_views_info(self, view_name: str = "") -> dict:
+        """Get PostgreSQL views."""
+        import psycopg2.extras
+        
+        views = []
+        with self._connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            query = """
+                SELECT table_name, view_definition
+                FROM information_schema.views
+                WHERE table_schema = 'public'
+            """
+            params = []
+            
+            if view_name:
+                query += " AND table_name LIKE %s"
+                params.append(view_name if '%' in view_name else view_name)
+                
+            query += " ORDER BY table_name"
+            
+            cursor.execute(query, tuple(params))
+            
+            for row in cursor.fetchall():
+                views.append({
+                    'name': row['table_name'],
+                    'definition': row['view_definition']
+                })
+        
+        return {'database': self.config.database, 'views': views}
+
     def get_execution_plan(self, query: str) -> str:
         """Get PostgreSQL execution plan using EXPLAIN ANALYZE."""
         import psycopg2.extras
@@ -372,7 +537,7 @@ class MSSQLConnector(DatabaseConnector):
             self._connection.close()
             self._connection = None
             
-    def get_schema_info(self) -> dict:
+    def get_schema_info(self, table_name: str = "") -> dict:
         """Get MSSQL schema information using INFORMATION_SCHEMA."""
         schema_info = {
             'database': self.config.database,
@@ -380,16 +545,24 @@ class MSSQLConnector(DatabaseConnector):
         }
         
         with self._connection.cursor() as cursor:
-            # Get tables using INFORMATION_SCHEMA (standard and widely accessible)
-            cursor.execute("""
+            # Get tables using INFORMATION_SCHEMA
+            query = """
                 SELECT 
                     TABLE_SCHEMA,
                     TABLE_NAME,
                     TABLE_TYPE
                 FROM INFORMATION_SCHEMA.TABLES
                 WHERE TABLE_TYPE = 'BASE TABLE'
-                ORDER BY TABLE_SCHEMA, TABLE_NAME
-            """)
+            """
+            params = []
+            
+            if table_name:
+                query += " AND TABLE_NAME LIKE %s"
+                params.append(table_name if '%' in table_name else table_name)
+                
+            query += " ORDER BY TABLE_SCHEMA, TABLE_NAME"
+            
+            cursor.execute(query, tuple(params))
             tables = cursor.fetchall()
             
             for table in tables:
@@ -550,6 +723,61 @@ class MSSQLConnector(DatabaseConnector):
         return schema_info
 
 
+    def get_procedures_info(self, procedure_name: str = "") -> dict:
+        """Get MSSQL stored procedures."""
+        procedures = []
+        with self._connection.cursor() as cursor:
+            query = """
+                SELECT ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_DEFINITION
+                FROM INFORMATION_SCHEMA.ROUTINES
+                WHERE ROUTINE_TYPE = 'PROCEDURE'
+            """
+            params = []
+            
+            if procedure_name:
+                query += " AND ROUTINE_NAME LIKE %s"
+                params.append(procedure_name if '%' in procedure_name else procedure_name)
+                
+            query += " ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME"
+            
+            cursor.execute(query, tuple(params))
+            
+            for row in cursor.fetchall():
+                procedures.append({
+                    'schema': row['ROUTINE_SCHEMA'],
+                    'name': row['ROUTINE_NAME'],
+                    'definition': row['ROUTINE_DEFINITION']
+                })
+        
+        return {'database': self.config.database, 'procedures': procedures}
+
+    def get_views_info(self, view_name: str = "") -> dict:
+        """Get MSSQL views."""
+        views = []
+        with self._connection.cursor() as cursor:
+            query = """
+                SELECT TABLE_SCHEMA, TABLE_NAME, VIEW_DEFINITION
+                FROM INFORMATION_SCHEMA.VIEWS
+            """
+            params = []
+            
+            if view_name:
+                query += " WHERE TABLE_NAME LIKE %s"
+                params.append(view_name if '%' in view_name else view_name)
+                
+            query += " ORDER BY TABLE_SCHEMA, TABLE_NAME"
+            
+            cursor.execute(query, tuple(params))
+            
+            for row in cursor.fetchall():
+                views.append({
+                    'schema': row['TABLE_SCHEMA'],
+                    'name': row['TABLE_NAME'],
+                    'definition': row['VIEW_DEFINITION']
+                })
+        
+        return {'database': self.config.database, 'views': views}
+
     def get_execution_plan(self, query: str) -> str:
         """Get MSSQL execution plan."""
         with self._connection.cursor() as cursor:
@@ -644,7 +872,7 @@ class H2Connector(DatabaseConnector):
             self._connection.close()
             self._connection = None
     
-    def get_schema_info(self) -> dict:
+    def get_schema_info(self, table_name: str = "") -> dict:
         """Get H2 schema information."""
         # H2 uses standard SQL INFORMATION_SCHEMA
         schema_info = {
@@ -655,12 +883,20 @@ class H2Connector(DatabaseConnector):
         cursor = self._connection.cursor()
         try:
             # Get tables
-            cursor.execute("""
+            query = """
                 SELECT TABLE_NAME, REMARKS
                 FROM INFORMATION_SCHEMA.TABLES
                 WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_TYPE = 'TABLE'
-                ORDER BY TABLE_NAME
-            """)
+            """
+            params = []
+            
+            if table_name:
+                query += " AND TABLE_NAME LIKE ?"
+                params.append(table_name if '%' in table_name else table_name)
+                
+            query += " ORDER BY TABLE_NAME"
+            
+            cursor.execute(query, tuple(params))
             tables = cursor.fetchall()
             
             for table in tables:
@@ -716,6 +952,68 @@ class H2Connector(DatabaseConnector):
         
         return schema_info
     
+    def get_procedures_info(self, procedure_name: str = "") -> dict:
+        """Get H2 stored procedures (Function Aliases)."""
+        procedures = []
+        cursor = self._connection.cursor()
+        try:
+            # H2 uses function aliases for stored procedures
+            query = """
+                SELECT ALIAS_NAME, JAVA_CLASS, METHOD_NAME 
+                FROM INFORMATION_SCHEMA.FUNCTION_ALIASES
+                WHERE ALIAS_SCHEMA = 'PUBLIC'
+            """
+            params = []
+            
+            if procedure_name:
+                query += " AND ALIAS_NAME LIKE ?"
+                params.append(procedure_name if '%' in procedure_name else procedure_name)
+                
+            query += " ORDER BY ALIAS_NAME"
+            
+            cursor.execute(query, tuple(params))
+            for row in cursor.fetchall():
+                procedures.append({
+                    'name': row[0],
+                    'definition': f"Java Class: {row[1]}, Method: {row[2]}"
+                })
+        except Exception:
+            # Table might not exist in older versions
+            pass
+        finally:
+            cursor.close()
+        
+        return {'database': self.config.database, 'procedures': procedures}
+
+    def get_views_info(self, view_name: str = "") -> dict:
+        """Get H2 views."""
+        views = []
+        cursor = self._connection.cursor()
+        try:
+            query = """
+                SELECT TABLE_NAME, VIEW_DEFINITION 
+                FROM INFORMATION_SCHEMA.VIEWS 
+                WHERE TABLE_SCHEMA = 'PUBLIC'
+            """
+            params = []
+            
+            if view_name:
+                query += " AND TABLE_NAME LIKE ?"
+                params.append(view_name if '%' in view_name else view_name)
+                
+            query += " ORDER BY TABLE_NAME"
+            
+            cursor.execute(query, tuple(params))
+            for row in cursor.fetchall():
+                views.append({
+                    'name': row[0],
+                    'definition': row[1]
+                })
+        finally:
+            cursor.close()
+        
+        return {'database': self.config.database, 'views': views}
+
     def get_execution_plan(self, query: str) -> str:
         """Get H2 execution plan using EXPLAIN."""
         cursor = self._connection.cursor()
@@ -776,7 +1074,7 @@ class SQLiteConnector(DatabaseConnector):
             self._connection.close()
             self._connection = None
     
-    def get_schema_info(self) -> dict:
+    def get_schema_info(self, table_name: str = "") -> dict:
         """Get SQLite schema information."""
         schema_info = {
             'database': self.config.database,
@@ -785,12 +1083,17 @@ class SQLiteConnector(DatabaseConnector):
         
         cursor = self._connection.cursor()
         
-        # Get all tables (excluding internal sqlite tables)
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name NOT LIKE 'sqlite_%'
-            ORDER BY name
-        """)
+        # Get tables (excluding internal sqlite tables)
+        query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        params = []
+        
+        if table_name:
+            query += " AND name LIKE ?"
+            params.append(table_name if '%' in table_name else table_name)
+            
+        query += " ORDER BY name"
+        
+        cursor.execute(query, tuple(params))
         tables = cursor.fetchall()
         
         for table_row in tables:
@@ -850,6 +1153,36 @@ class SQLiteConnector(DatabaseConnector):
         cursor.close()
         return schema_info
     
+    def get_procedures_info(self, procedure_name: str = "") -> dict:
+        """Get SQLite stored procedures (Not Supported)."""
+        # SQLite does not support stored procedures
+        return {'database': self.config.database, 'procedures': []}
+
+    def get_views_info(self, view_name: str = "") -> dict:
+        """Get SQLite views."""
+        views = []
+        cursor = self._connection.cursor()
+        try:
+            query = "SELECT name, sql FROM sqlite_master WHERE type='view'"
+            params = []
+            
+            if view_name:
+                query += " AND name LIKE ?"
+                params.append(view_name if '%' in view_name else view_name)
+                
+            query += " ORDER BY name"
+            
+            cursor.execute(query, tuple(params))
+            for row in cursor.fetchall():
+                views.append({
+                    'name': row['name'],
+                    'definition': row['sql']
+                })
+        finally:
+            cursor.close()
+        
+        return {'database': self.config.database, 'views': views}
+
     def get_execution_plan(self, query: str) -> str:
         """Get SQLite execution plan using EXPLAIN QUERY PLAN."""
         cursor = self._connection.cursor()

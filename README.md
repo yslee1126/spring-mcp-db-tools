@@ -14,7 +14,12 @@ Spring Boot 프로젝트의 데이터베이스 스키마 조회 및 쿼리 실�
 - SELECT, INSERT, UPDATE, DELETE 쿼리 지원
 - 성능 최적화 가이드 제공 (스캔 방식, 인덱스, 조인, 쿼리 구문 개선 제안)
 
-### 3. 데이터소스 목록 조회 (`list_datasources`)
+### 3. 저장 프로시저 및 뷰 조회 (`get_procedures`, `get_views`)
+- 저장 프로시저(Stored Procedure) 목록 및 정의(SQL) 조회
+- 뷰(View) 목록 및 정의(SQL) 조회
+- 각 객체별 코멘트 및 상세 정보 확인
+
+### 4. 데이터소스 목록 조회 (`list_datasources`)
 - 설정된 모든 데이터소스 목록 확인
 - 데이터베이스 타입, 호스트, 포트 정보 확인
 
