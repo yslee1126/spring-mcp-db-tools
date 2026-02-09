@@ -373,122 +373,182 @@ class MSSQLConnector(DatabaseConnector):
             self._connection = None
             
     def get_schema_info(self) -> dict:
-        """Get MSSQL schema information."""
+        """Get MSSQL schema information using INFORMATION_SCHEMA."""
         schema_info = {
             'database': self.config.database,
             'tables': []
         }
         
         with self._connection.cursor() as cursor:
-            # Get tables
+            # Get tables using INFORMATION_SCHEMA (standard and widely accessible)
             cursor.execute("""
-                SELECT t.name AS TABLE_NAME,
-                       sep.value AS TABLE_COMMENT,
-                       p.rows AS TABLE_ROWS
-                FROM sys.tables t
-                LEFT JOIN sys.extended_properties sep ON t.object_id = sep.major_id 
-                                                       AND sep.minor_id = 0
-                                                       AND sep.name = 'MS_Description'
-                LEFT JOIN sys.partitions p ON t.object_id = p.object_id 
-                                            AND p.index_id IN (0, 1)
-                WHERE t.is_ms_shipped = 0
-                ORDER BY t.name
+                SELECT 
+                    TABLE_SCHEMA,
+                    TABLE_NAME,
+                    TABLE_TYPE
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_TYPE = 'BASE TABLE'
+                ORDER BY TABLE_SCHEMA, TABLE_NAME
             """)
             tables = cursor.fetchall()
             
             for table in tables:
+                schema_name = table['TABLE_SCHEMA']
+                table_name = table['TABLE_NAME']
+                
                 table_info = {
-                    'name': table['TABLE_NAME'],
-                    'comment': table['TABLE_COMMENT'],
-                    'estimated_rows': table['TABLE_ROWS'],
+                    'name': table_name,  # Keep just table name for backward compatibility
+                    'schema': schema_name,
+                    'comment': None,
+                    'estimated_rows': None,
                     'columns': [],
                     'indexes': [],
                     'foreign_keys': []
                 }
                 
-                # Get columns
+                # Get columns using INFORMATION_SCHEMA
                 cursor.execute("""
-                    SELECT c.name AS COLUMN_NAME,
-                           ip.DATA_TYPE,
-                           c.max_length,
-                           c.is_nullable,
-                           object_definition(c.default_object_id) AS COLUMN_DEFAULT,
-                           sep.value AS COLUMN_COMMENT
-                    FROM sys.columns c
-                    JOIN INFORMATION_SCHEMA.COLUMNS ip ON c.name = ip.COLUMN_NAME 
-                                                        AND object_name(c.object_id) = ip.TABLE_NAME
-                    LEFT JOIN sys.extended_properties sep ON c.object_id = sep.major_id 
-                                                           AND c.column_id = sep.minor_id
-                                                           AND sep.name = 'MS_Description'
-                    WHERE object_name(c.object_id) = %s
-                    ORDER BY c.column_id
-                """, (table['TABLE_NAME'],))
+                    SELECT 
+                        COLUMN_NAME,
+                        DATA_TYPE,
+                        CHARACTER_MAXIMUM_LENGTH,
+                        NUMERIC_PRECISION,
+                        NUMERIC_SCALE,
+                        IS_NULLABLE,
+                        COLUMN_DEFAULT
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+                    ORDER BY ORDINAL_POSITION
+                """, (schema_name, table_name))
                 columns = cursor.fetchall()
                 
                 for col in columns:
+                    col_name = col['COLUMN_NAME']
+                    data_type = col['DATA_TYPE']
+                    
+                    # Add type details
+                    if col['CHARACTER_MAXIMUM_LENGTH']:
+                        if col['CHARACTER_MAXIMUM_LENGTH'] == -1:
+                            data_type += "(MAX)"
+                        else:
+                            data_type += f"({col['CHARACTER_MAXIMUM_LENGTH']})"
+                    elif col['NUMERIC_PRECISION']:
+                        if col['NUMERIC_SCALE']:
+                            data_type += f"({col['NUMERIC_PRECISION']},{col['NUMERIC_SCALE']})"
+                        else:
+                            data_type += f"({col['NUMERIC_PRECISION']})"
+                    
                     table_info['columns'].append({
-                        'name': col['COLUMN_NAME'],
-                        'type': col['DATA_TYPE'],
-                        'nullable': col['is_nullable'],
+                        'name': col_name,
+                        'type': data_type,
+                        'nullable': col['IS_NULLABLE'] == 'YES',
                         'default': col['COLUMN_DEFAULT'],
-                        'comment': col['COLUMN_COMMENT']
+                        'comment': None
                     })
                 
-                # Get indexes
-                cursor.execute("""
-                    SELECT i.name AS INDEX_NAME,
-                           i.is_unique,
-                           c.name AS COLUMN_NAME,
-                           i.type_desc AS INDEX_TYPE
-                    FROM sys.indexes i
-                    JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-                    WHERE object_name(i.object_id) = %s
-                    ORDER BY i.name, ic.key_ordinal
-                """, (table['TABLE_NAME'],))
-                indexes = cursor.fetchall()
+                # Get primary keys using INFORMATION_SCHEMA
+                try:
+                    cursor.execute("""
+                        SELECT 
+                            kcu.COLUMN_NAME,
+                            tc.CONSTRAINT_NAME
+                        FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                        JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                            ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                            AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+                            AND tc.TABLE_NAME = kcu.TABLE_NAME
+                        WHERE tc.TABLE_SCHEMA = %s 
+                            AND tc.TABLE_NAME = %s
+                            AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                        ORDER BY kcu.ORDINAL_POSITION
+                    """, (schema_name, table_name))
+                    pk_columns = cursor.fetchall()
+                    
+                    if pk_columns:
+                        pk_cols = [row['COLUMN_NAME'] for row in pk_columns]
+                        pk_name = pk_columns[0]['CONSTRAINT_NAME']
+                        table_info['indexes'].append({
+                            'name': pk_name,
+                            'unique': True,
+                            'columns': pk_cols,
+                            'type': 'PRIMARY KEY'
+                        })
+                except Exception:
+                    # Skip if permission denied
+                    pass
                 
-                # Group indexes
-                idx_map = {}
-                for idx in indexes:
-                    idx_name = idx['INDEX_NAME']
-                    if idx_name not in idx_map:
-                        idx_map[idx_name] = {
-                            'name': idx_name,
-                            'unique': idx['is_unique'],
-                            'type': idx['INDEX_TYPE'],
-                            'columns': []
-                        }
-                    idx_map[idx_name]['columns'].append(idx['COLUMN_NAME'])
+                # Get foreign keys using sys views (fallback to INFORMATION_SCHEMA if fails)
+                try:
+                    cursor.execute("""
+                        SELECT 
+                            fk.name AS FK_NAME,
+                            COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS COLUMN_NAME,
+                            OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS REF_SCHEMA,
+                            OBJECT_NAME(fk.referenced_object_id) AS REF_TABLE,
+                            COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS REF_COLUMN
+                        FROM sys.foreign_keys fk
+                        JOIN sys.foreign_key_columns fkc 
+                            ON fk.object_id = fkc.constraint_object_id
+                        WHERE OBJECT_SCHEMA_NAME(fk.parent_object_id) = %s
+                            AND OBJECT_NAME(fk.parent_object_id) = %s
+                        ORDER BY fk.name, fkc.constraint_column_id
+                    """, (schema_name, table_name))
+                    fk_rows = cursor.fetchall()
+                    
+                    for row in fk_rows:
+                        table_info['foreign_keys'].append({
+                            'name': row['FK_NAME'],
+                            'column': row['COLUMN_NAME'],
+                            'referenced_table': f"{row['REF_SCHEMA']}.{row['REF_TABLE']}",
+                            'referenced_column': row['REF_COLUMN']
+                        })
+                except Exception:
+                    # Skip if permission denied
+                    pass
                 
-                table_info['indexes'] = list(idx_map.values())
-                
-                # Get foreign keys
-                cursor.execute("""
-                    SELECT fk.name AS CONSTRAINT_NAME,
-                           c1.name AS COLUMN_NAME,
-                           t2.name AS REFERENCED_TABLE_NAME,
-                           c2.name AS REFERENCED_COLUMN_NAME
-                    FROM sys.foreign_keys fk
-                    INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-                    INNER JOIN sys.columns c1 ON fkc.parent_column_id = c1.column_id AND fkc.parent_object_id = c1.object_id
-                    INNER JOIN sys.tables t2 ON fkc.referenced_object_id = t2.object_id
-                    INNER JOIN sys.columns c2 ON fkc.referenced_column_id = c2.column_id AND fkc.referenced_object_id = c2.object_id
-                    WHERE object_name(fk.parent_object_id) = %s
-                """, (table['TABLE_NAME'],))
-                fks = cursor.fetchall()
-                
-                for fk in fks:
-                    table_info['foreign_keys'].append({
-                        'name': fk['CONSTRAINT_NAME'],
-                        'column': fk['COLUMN_NAME'],
-                        'referenced_table': fk['REFERENCED_TABLE_NAME'],
-                        'referenced_column': fk['REFERENCED_COLUMN_NAME']
-                    })
+                # Get indexes using sys views
+                try:
+                    cursor.execute("""
+                        SELECT 
+                            i.name AS INDEX_NAME,
+                            i.type_desc AS INDEX_TYPE,
+                            i.is_unique,
+                            COL_NAME(ic.object_id, ic.column_id) AS COLUMN_NAME,
+                            ic.is_descending_key
+                        FROM sys.indexes i
+                        JOIN sys.index_columns ic 
+                            ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                        WHERE OBJECT_SCHEMA_NAME(i.object_id) = %s
+                            AND OBJECT_NAME(i.object_id) = %s
+                            AND i.type > 0
+                            AND i.is_primary_key = 0
+                        ORDER BY i.name, ic.key_ordinal
+                    """, (schema_name, table_name))
+                    index_rows = cursor.fetchall()
+                    
+                    # Group indexes
+                    idx_map = {}
+                    for row in index_rows:
+                        idx_name = row['INDEX_NAME']
+                        if idx_name not in idx_map:
+                            idx_map[idx_name] = {
+                                'name': idx_name,
+                                'unique': row['is_unique'],
+                                'type': row['INDEX_TYPE'],
+                                'columns': []
+                            }
+                        col_order = f"{row['COLUMN_NAME']} DESC" if row['is_descending_key'] else row['COLUMN_NAME']
+                        idx_map[idx_name]['columns'].append(col_order)
+                    
+                    table_info['indexes'].extend(list(idx_map.values()))
+                except Exception:
+                    # Skip if permission denied
+                    pass
                 
                 schema_info['tables'].append(table_info)
-                
+        
         return schema_info
+
 
     def get_execution_plan(self, query: str) -> str:
         """Get MSSQL execution plan."""
@@ -516,6 +576,26 @@ class MSSQLConnector(DatabaseConnector):
                     cursor.execute("SET SHOWPLAN_TEXT OFF")
                 except:
                     pass
+                
+                # Handle permission denied specifically (Error 262)
+                error_str = str(e)
+                if "SHOWPLAN permission denied" in error_str or "262" in error_str:
+                    return (
+                        "=" * 80 + "\n"
+                        "⚠️ 실행 계획 권한 부족 (Permission Denied)\n"
+                        "=" * 80 + "\n\n"
+                        "현재 데이터베이스 사용자에게 'SHOWPLAN' 권한이 없어 실행 계획을 직접 추출할 수 없습니다.\n\n"
+                        "💡 대안 및 권장 사항:\n"
+                        "1. 테이블 스키마 조회 (`get_schema_info`)를 통해 인덱스 정보를 확인하세요.\n"
+                        "   - WHERE 조건절에 사용된 컬럼에 인덱스가 있는지 확인\n"
+                        "   - JOIN 조건 컬럼에 인덱스가 있는지 확인\n"
+                        "   - ORDER BY 컬럼이 인덱스에 포함되는지 확인\n\n"
+                        "2. 쿼리 최적화 팁:\n"
+                        "   - SELECT * 사용 자제\n"
+                        "   - LIKE '%keyword%' (Leading wildcard) 사용 시 인덱스 미사용 주의\n"
+                        "   - 함수(컬럼) = 값 형태 대신 컬럼 = 값(함수) 형태 사용\n"
+                    )
+                
                 raise e
 
 

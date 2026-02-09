@@ -134,17 +134,31 @@ class ApplicationYamlParser:
     Supports multiple datasources and Jasypt encryption.
     """
     
-    def __init__(self, yaml_path: str, jasypt_key: str = None):
+    def __init__(
+        self,
+        yaml_path: str,
+        jasypt_key: str = None,
+        jasypt_algorithm: str = "PBEWithMD5AndDES",
+        jasypt_salt: str = None
+    ):
         """
         Initialize the parser.
         
         Args:
             yaml_path: Absolute path to the application.yml file
             jasypt_key: Optional JASYPT_KEY for decrypting encrypted values
+            jasypt_algorithm: Jasypt encryption algorithm (default: PBEWithMD5AndDES)
+            jasypt_salt: Optional fixed salt for StringFixedSaltGenerator
         """
         self.yaml_path = Path(yaml_path)
         self.jasypt_key = jasypt_key
-        self.decryptor = JasyptDecryptor(jasypt_key) if jasypt_key else None
+        self.jasypt_algorithm = jasypt_algorithm
+        self.jasypt_salt = jasypt_salt
+        self.decryptor = JasyptDecryptor(
+            jasypt_key,
+            algorithm=jasypt_algorithm,
+            fixed_salt=jasypt_salt
+        ) if jasypt_key else None
         
         if not self.yaml_path.exists():
             raise FileNotFoundError(f"application.yml not found: {yaml_path}")
@@ -293,6 +307,18 @@ class ApplicationYamlParser:
                 for ds_name, ds_config in ds.items():
                     if isinstance(ds_config, dict) and ('url' in ds_config or 'jdbc-url' in ds_config):
                         datasources.append(self._extract_single_datasource(ds_config, ds_name))
+        
+        # Check for arbitrary keys under spring that might contain datasource
+        # Example: spring.primary-db.datasource
+        for key, value in spring_config.items():
+            if key == 'datasource':
+                continue
+                
+            if isinstance(value, dict) and 'datasource' in value:
+                ds = value['datasource']
+                if isinstance(ds, dict) and ('url' in ds or 'jdbc-url' in ds):
+                    # Use the key as the datasource name (e.g., primary-db)
+                    datasources.append(self._extract_single_datasource(ds, key))
         
         # Check for multiple datasources pattern (common in multi-datasource setups)
         # Pattern: spring.datasource.primary, spring.datasource.secondary

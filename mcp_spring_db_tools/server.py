@@ -5,11 +5,13 @@ Provides database schema inspection and query execution plan analysis
 for Spring Boot projects with multiple datasource support.
 
 Usage:
-    mcp-spring-db-tools <application_yml_path> <jasypt_key>
+    mcp-spring-db-tools <application_yml_path> <jasypt_key> [jasypt_algorithm] [jasypt_salt]
 
 Arguments:
     application_yml_path: Absolute path to Spring Boot application.yml
     jasypt_key: JASYPT_KEY for decrypting encrypted database credentials (use empty string if not encrypted)
+    jasypt_algorithm: Optional Jasypt encryption algorithm (default: PBEWithMD5AndDES)
+    jasypt_salt: Optional fixed salt for StringFixedSaltGenerator (empty for RandomSaltGenerator)
 """
 
 import sys
@@ -21,6 +23,7 @@ from mcp.server import NotificationOptions, Server
 from mcp.types import Tool, TextContent
 
 from .common.yaml_parser import ApplicationYamlParser, DataSourceConfig
+from .common.properties_parser import ApplicationPropertiesParser
 from .common.db_connector import create_connector, DatabaseConnector
 from .tools.schema_tool import get_schema_info, format_schema_info
 from .tools.execution_plan_tool import get_execution_plan, validate_query, format_execution_plan_result
@@ -45,16 +48,26 @@ class SpringDBToolsServer:
         3. list_datasources: List all configured datasources
     """
     
-    def __init__(self, yaml_path: str, jasypt_key: str = ""):
+    def __init__(
+        self,
+        yaml_path: str,
+        jasypt_key: str = "",
+        jasypt_algorithm: str = "PBEWithMD5AndDES",
+        jasypt_salt: str = ""
+    ):
         """
         Initialize the server with Spring Boot configuration.
         
         Args:
-            yaml_path: Path to application.yml file
+            yaml_path: Path to application.yml or application.properties file
             jasypt_key: JASYPT_KEY for decryption (empty string if not needed)
+            jasypt_algorithm: Jasypt encryption algorithm (default: PBEWithMD5AndDES)
+            jasypt_salt: Fixed salt for StringFixedSaltGenerator (empty if RandomSaltGenerator)
         """
         self.yaml_path = yaml_path
         self.jasypt_key = jasypt_key if jasypt_key else None
+        self.jasypt_algorithm = jasypt_algorithm
+        self.jasypt_salt = jasypt_salt if jasypt_salt else None
         self.datasources: list[DataSourceConfig] = []
         self.connectors: dict[str, DatabaseConnector] = {}
         self.server = Server("mcp-spring-db-tools")
@@ -124,7 +137,7 @@ class SpringDBToolsServer:
                 Tool(
                     name="list_datasources",
                     description=(
-                        "List all available datasources configured in the Spring Boot application.yml. "
+                        "List all available datasources configured in the Spring Boot application configuration. "
                         "Shows datasource names, database types, and connection status."
                     ),
                     inputSchema={
@@ -163,20 +176,34 @@ class SpringDBToolsServer:
                 return [TextContent(type="text", text=f"Error: {str(e)}")]
     
     def _parse_config(self):
-        """Parse application.yml and initialize datasources."""
+        """Parse configuration file (yml or properties) and initialize datasources."""
         try:
-            parser = ApplicationYamlParser(self.yaml_path, self.jasypt_key)
+            if self.yaml_path.endswith('.properties'):
+                parser = ApplicationPropertiesParser(
+                    self.yaml_path,
+                    self.jasypt_key,
+                    self.jasypt_algorithm,
+                    self.jasypt_salt
+                )
+            else:
+                parser = ApplicationYamlParser(
+                    self.yaml_path,
+                    self.jasypt_key,
+                    self.jasypt_algorithm,
+                    self.jasypt_salt
+                )
+                
             self.datasources = parser.parse()
             
             if not self.datasources:
-                raise ValueError("No datasources found in application.yml")
+                raise ValueError(f"No datasources found in {self.yaml_path}")
             
             logger.info(f"Found {len(self.datasources)} datasource(s)")
             for ds in self.datasources:
                 logger.info(f"  - {ds.name}: {ds.db_type} ({ds.database})")
                 
         except Exception as e:
-            logger.error(f"Failed to parse application.yml: {e}")
+            logger.error(f"Failed to parse configuration: {e}")
             raise
     
     def _get_connector(self, datasource_name: str = "") -> tuple[str, DatabaseConnector]:
@@ -279,25 +306,37 @@ def main():
     """Main entry point for the MCP server."""
     import asyncio
     
-    # Parse command line arguments
+    # Parse command line arguments with backward compatibility
     if len(sys.argv) < 3:
         print(
-            "Usage: mcp-spring-db-tools <application_yml_path> <jasypt_key>\n\n"
+            "Usage: mcp-spring-db-tools <application_yml_path> <jasypt_key> [jasypt_algorithm] [jasypt_salt]\n\n"
             "Arguments:\n"
             "  application_yml_path  Absolute path to Spring Boot application.yml\n"
-            "  jasypt_key            JASYPT_KEY for decryption (use empty quotes \"\" if not encrypted)\n\n"
-            "Example:\n"
-            '  mcp-spring-db-tools /path/to/application.yml "my-secret-key"\n'
-            '  mcp-spring-db-tools /path/to/application.yml ""\n',
+            "  jasypt_key            JASYPT_KEY for decryption (use empty quotes \"\" if not encrypted)\n"
+            "  jasypt_algorithm      Optional: Jasypt algorithm (default: PBEWithMD5AndDES)\n"
+            "                        Supported: PBEWithMD5AndDES, PBEWithMD5AndTripleDES, PBEWITHHMACSHA512ANDAES_256\n"
+            "  jasypt_salt           Optional: Fixed salt for StringFixedSaltGenerator\n"
+            "                        (leave empty for RandomSaltGenerator)\n\n"
+            "Examples:\n"
+            "  # No encryption\n"
+            '  mcp-spring-db-tools /path/to/application.yml ""\n\n'
+            "  # Jasypt with RandomSaltGenerator (default)\n"
+            '  mcp-spring-db-tools /path/to/application.yml "my-secret-key"\n\n'
+            "  # Jasypt with custom algorithm and RandomSaltGenerator\n"
+            '  mcp-spring-db-tools /path/to/application.yml "my-key" "PBEWithMD5AndTripleDES"\n\n'
+            "  # Jasypt with FixedSaltGenerator\n"
+            '  mcp-spring-db-tools /path/to/application.yml "my-key" "PBEWithMD5AndDES" "my-salt"\n',
             file=sys.stderr
         )
         sys.exit(1)
     
     yaml_path = sys.argv[1]
     jasypt_key = sys.argv[2]
+    jasypt_algorithm = sys.argv[3] if len(sys.argv) > 3 else "PBEWithMD5AndDES"
+    jasypt_salt = sys.argv[4] if len(sys.argv) > 4 else ""
     
     # Create and run server
-    server = SpringDBToolsServer(yaml_path, jasypt_key)
+    server = SpringDBToolsServer(yaml_path, jasypt_key, jasypt_algorithm, jasypt_salt)
     asyncio.run(server.run())
 
 

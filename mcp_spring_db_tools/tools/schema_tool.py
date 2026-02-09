@@ -53,7 +53,9 @@ def format_schema_info(ds_name: str, schema_info: dict) -> str:
     ]
     
     for table in schema_info.get('tables', []):
-        lines.append(f"📋 TABLE: {table['name']}")
+        # Display schema.table if schema is available
+        table_display_name = f"{table['schema']}.{table['name']}" if table.get('schema') else table['name']
+        lines.append(f"📋 TABLE: {table_display_name}")
         if table.get('comment'):
             lines.append(f"   Comment: {table['comment']}")
         if table.get('estimated_rows'):

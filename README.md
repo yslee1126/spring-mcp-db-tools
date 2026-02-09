@@ -94,7 +94,7 @@ pip install mcp-spring-db-tools
 }
 ```
 
-**Jasypt 사용 시:**
+**Jasypt 사용 시 (기본 설정):**
 ```json
 {
   "mcpServers": {
@@ -109,6 +109,31 @@ pip install mcp-spring-db-tools
   }
 }
 ```
+
+**Jasypt 고급 설정 (알고리즘 및 Salt 지정):**
+```json
+{
+  "mcpServers": {
+    "spring-db-tools": {
+      "command": "uvx",
+      "args": [
+        "mcp-spring-db-tools",
+        "/path/to/your-spring-project/src/main/resources/application.yml",
+        "your-jasypt-secret-key",
+        "PBEWithMD5AndDES",
+        "your-fixed-salt"
+      ]
+    }
+  }
+}
+```
+
+**인자 설명:**
+- `args[0]`: `application.yml` 파일 경로 (필수)
+- `args[1]`: Jasypt 암호화 키 (선택, 기본값: 빈 문자열)
+- `args[2]`: Jasypt 알고리즘 (선택, 기본값: `PBEWithMD5AndDES`)
+- `args[3]`: Jasypt Fixed Salt (선택, StringFixedSaltGenerator 사용 시)
+
 
 #### 3️⃣ IDE 재시작
 
@@ -182,9 +207,9 @@ pytest tests/ --cov=mcp_spring_db_tools --cov-report=html
 
 ---
 
-## 📁 지원하는 application.yml 형식
+## 📁 지원하는 설정 파일 형식 (yml, properties)
 
-### 단일 데이터소스
+### 1. 단일 데이터소스
 
 ```yaml
 spring:
@@ -195,7 +220,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
 ```
 
-### 다중 데이터소스
+### 2. 다중 데이터소스
 
 ```yaml
 spring:
@@ -224,7 +249,50 @@ datasources:
     password: pass
 ```
 
-### 환경변수 지원
+### 3. 유연한 데이터소스 구조 (Custom Datasource Structure)
+
+Spring 설정 하위의 임의의 키에 `datasource`가 포함된 경우도 인식합니다.
+
+```yaml
+spring:
+  primary-db:
+    datasource:
+      url: jdbc:sqlserver://...
+      username: ...
+  secondary-db:
+    datasource:
+      url: jdbc:sqlserver://...
+      username: ...
+```
+
+### 4. Properties 파일 지원 (`application.properties`)
+
+`.yml` 파일 뿐만 아니라 `.properties` 파일도 지원합니다.
+
+**표준 Spring Boot 스타일:**
+```properties
+spring.datasource.url=jdbc:mysql://localhost:3306/mydb
+spring.datasource.username=admin
+spring.datasource.password=secret
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+```
+
+**Legacy / Flat 스타일 (Prefix 없이):**
+```properties
+jdbcUrl=jdbc:sqlserver://localhost:1433;databaseName=my_database
+driverClassName=com.microsoft.sqlserver.jdbc.SQLServerDriver
+username=ENC(dummy-encrypted-username)
+password=ENC(dummy-encrypted-password)
+```
+
+**유연한 키 이름 지원:**
+- `jdbcUrl`, `jdbc-url`, `url` 모두 인식
+- `driverClassName`, `driver-class-name`, `driver-class` 모두 인식
+- `username`, `user` 모두 인식
+- `camelCase` 및 `kebab-case` 혼용 지원
+
+
+### 5. 환경변수 지원
 
 ```yaml
 spring:
@@ -234,7 +302,7 @@ spring:
     password: ${DB_PASSWORD}
 ```
 
-### SQLite 설정
+### 6. SQLite 설정
 
 **파일 기반 SQLite:**
 ```yaml
@@ -274,7 +342,9 @@ spring:
     password: ENC(Y7dT1gJ8nKoE4...)
 ```
 
-**MCP 설정에서 Jasypt 키 전달:**
+### 기본 설정 (RandomSaltGenerator)
+
+**MCP 설정:**
 ```json
 {
   "args": [
@@ -284,8 +354,34 @@ spring:
 }
 ```
 
+### 고급 설정 (Fixed Salt)
+
+Java에서 `StringFixedSaltGenerator`를 사용하는 경우:
+
+**MCP 설정:**
+```json
+{
+  "args": [
+    "/path/to/application.yml",
+    "your-jasypt-encryption-key",
+    "PBEWithMD5AndDES",
+    "your-fixed-salt"
+  ]
+}
+```
+
+### 지원되는 알고리즘
+
+- `PBEWithMD5AndDES` (기본값)
+- `PBEWithMD5AndTripleDES`
+- `PBEWITHHMACSHA512ANDAES_256`
+
+**참고:** Fixed Salt는 salt 문자열의 첫 8바이트만 사용됩니다.
+
+
 ---
 
 ## 📝 라이선스
 
 MIT License
+```
