@@ -6,7 +6,7 @@ Provides database schema inspection functionality.
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mcp_spring_db_tools.common.db_connector import DatabaseConnector
+    from mcp_spring_db_tools.utils.db_connector import DatabaseConnector
 
 
 def get_schema_info(connector: "DatabaseConnector", table_name: str = "") -> dict:

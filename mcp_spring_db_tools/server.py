@@ -22,9 +22,9 @@ from mcp.server.models import InitializationOptions
 from mcp.server import NotificationOptions, Server
 from mcp.types import Tool, TextContent
 
-from .common.yaml_parser import ApplicationYamlParser, DataSourceConfig
-from .common.properties_parser import ApplicationPropertiesParser
-from .common.db_connector import create_connector, DatabaseConnector
+from .utils.yaml_parser import ApplicationYamlParser, DataSourceConfig
+from .utils.properties_parser import ApplicationPropertiesParser
+from .utils.db_connector import create_connector, DatabaseConnector
 from .tools.schema_tool import get_schema_info, format_schema_info
 from .tools.execution_plan_tool import get_execution_plan, validate_query, format_execution_plan_result
 from .tools.datasource_tool import list_datasources

@@ -6,7 +6,7 @@ Provides database stored procedure inspection functionality.
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mcp_spring_db_tools.common.db_connector import DatabaseConnector
+    from mcp_spring_db_tools.utils.db_connector import DatabaseConnector
 
 
 def get_procedures(connector: "DatabaseConnector", procedure_name: str = "") -> dict:

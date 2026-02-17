@@ -32,7 +32,7 @@ def test_decryption(jasypt_key: str = "", jasypt_algorithm: str = "PBEWithMD5And
     print()
     
     try:
-        from mcp_spring_db_tools.common.jasypt_decryptor import JasyptDecryptor
+        from mcp_spring_db_tools.utils.jasypt_decryptor import JasyptDecryptor
         
         # 테스트할 암호화된 값들
         test_values = [
@@ -70,7 +70,7 @@ def test_parsing(yaml_path: str, jasypt_key: str = "", jasypt_algorithm: str = "
     print()
     
     try:
-        from mcp_spring_db_tools.common.yaml_parser import ApplicationYamlParser
+        from mcp_spring_db_tools.utils.yaml_parser import ApplicationYamlParser
         
         parser = ApplicationYamlParser(yaml_path, jasypt_key, jasypt_algorithm, jasypt_salt)
         datasources = parser.parse()
@@ -111,7 +111,7 @@ def test_connector_creation(datasources):
         return
     
     try:
-        from mcp_spring_db_tools.common.db_connector import create_connector
+        from mcp_spring_db_tools.utils.db_connector import create_connector
         
         for ds in datasources:
             print(f"\n데이터소스: {ds.name}")

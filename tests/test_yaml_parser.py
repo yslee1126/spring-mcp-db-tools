@@ -6,7 +6,7 @@ import tempfile
 import os
 import pytest
 
-from mcp_spring_db_tools.common.yaml_parser import ApplicationYamlParser, DataSourceConfig
+from mcp_spring_db_tools.utils.yaml_parser import ApplicationYamlParser, DataSourceConfig
 
 
 class TestDataSourceConfig:

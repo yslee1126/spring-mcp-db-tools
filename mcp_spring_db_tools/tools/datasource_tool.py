@@ -6,7 +6,7 @@ Provides functionality to list configured datasources.
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mcp_spring_db_tools.common.yaml_parser import DataSourceConfig
+    from mcp_spring_db_tools.utils.yaml_parser import DataSourceConfig
 
 
 def list_datasources(datasources: list["DataSourceConfig"]) -> str:

@@ -6,7 +6,7 @@ import sqlite3
 import tempfile
 import pytest
 
-from mcp_spring_db_tools.common import SQLiteConnector, DataSourceConfig
+from mcp_spring_db_tools.utils import SQLiteConnector, DataSourceConfig
 
 
 @pytest.fixture

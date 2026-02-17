@@ -26,8 +26,8 @@ pip install -e ".[dev]"
 mcp-spring-db-tools/
 ├── mcp_spring_db_tools/        # 메인 패키지
 │   ├── server.py               # MCP 서버 핵심 로직 (FastMCP 기반)
-│   ├── common/                 # 공용 유틸리티 및 파서
-│   │   ├── db_connectors/      # DB 엔진별 커넥터 구현체 (신설)
+│   ├── utils/                  # 공용 유틸리티 및 파서
+│   │   ├── db_connectors/      # DB 엔진별 커넥터 구현체 
 │   │   │   ├── base.py         # 모든 커넥터의 기반 인터페이스
 │   │   │   ├── mysql.py        # MySQL/MariaDB 구현체
 │   │   │   ├── postgresql.py   # PostgreSQL 구현체
