@@ -27,15 +27,23 @@ mcp-spring-db-tools/
 ├── mcp_spring_db_tools/        # 메인 패키지
 │   ├── server.py               # MCP 서버 핵심 로직 (FastMCP 기반)
 │   ├── common/                 # 공용 유틸리티 및 파서
-│   │   ├── db_connector.py     # DB 연결 및 쿼리 실행 (MySQL, PSQL, SQLite 등)
+│   │   ├── db_connectors/      # DB 엔진별 커넥터 구현체 (신설)
+│   │   │   ├── base.py         # 모든 커넥터의 기반 인터페이스
+│   │   │   ├── mysql.py        # MySQL/MariaDB 구현체
+│   │   │   ├── postgresql.py   # PostgreSQL 구현체
+│   │   │   ├── sqlite.py       # SQLite 구현체
+│   │   │   └── ...             # 기타 엔진(MSSQL, H2) 구현체
+│   │   ├── db_connector.py     # 하위 호환성을 위한 커넥터 래퍼 (Factory)
 │   │   ├── yaml_parser.py      # application.yml 파싱 및 데이터소스 추출
 │   │   └── jasypt_decryptor.py # Jasypt 암호화 데이터 복호화 로직
 │   ├── tools/                  # MCP 도구(Tool) 구현체
 │   │   ├── schema_tool.py      # 스키마 정보 조회 도구
+│   │   ├── procedure_tool.py   # 프로시저 정보 조회 도구
+│   │   ├── view_tool.py        # 뷰 정보 조회 도구
 │   │   └── execution_plan_tool.py # 실행계획 분석 도구
-│   └── __main__.py             # uvx 실행 진입점
-├── tests/                      # 단위 테스트 및 테스트용 설정 파일
-├── pyproject.toml              # 프로젝트 프로젝트 설정 및 의존성
+│   └── __main__.py             # 모듈 실행 진입점
+├── tests/                      # 단위 테스트 세트
+├── pyproject.toml              # 프로젝트 설정 및 의존성 관리
 └── README.md                   # 메인 안내 문서
 ```
 
