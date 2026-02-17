@@ -2,6 +2,8 @@
 
 Spring Boot 프로젝트의 데이터베이스 스키마 조회 및 쿼리 실행계획 분석을 위한 MCP(Model Context Protocol) 서버입니다.
 
+이 MCP 서버는 **stdio 방식만** 지원합니다.
+
 ## 🎯 주요 기능
 
 ### 1. 데이터베이스 스키마 조회 (`get_schema_info`)
@@ -34,88 +36,16 @@ Spring Boot 프로젝트의 데이터베이스 스키마 조회 및 쿼리 실�
 
 ## 사용 방법
 
-사용 목적에 따라 선택하세요:
+IDE의 MCP 설정 파일에 다음과 같이 추가하여 사용합니다. `uvx`를 사용하므로 별도의 설치 과정이 필요 없으며, 실행 시점에 필요한 패키지를 자동으로 로드합니다.
 
-### 방법 1: MCP 설치해서 사용 (권장)
+### IDE MCP 설정
 
-**이런 경우 사용:**
-- Spring Boot 개발 중 DB 스키마 조회가 필요한 경우
-- 쿼리 실행계획 분석이 필요한 경우
-- 단순히 이 MCP 기능을 사용하고 싶은 경우
+**설정 파일 위치:**
+- **Cursor / VS Code:** `~/Library/Application Support/Cursor(혹은 Code)/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+- **IntelliJ AI Assistant:** `~/Library/Application Support/JetBrains/IntelliJIdea<버전>/mcp_settings.json`
 
-#### 1️⃣ 설치 (선택 - uvx 사용 시 불필요)
+**설정 예시 (JSON):**
 
-**방법 A: uvx 사용 (가장 권장 - 설치 불필요)**
-```bash
-# 아무것도 설치하지 않아도 됩니다!
-```
-
-**방법 B: pip 설치**
-```bash
-pip install mcp-spring-db-tools
-```
-
-#### 2️⃣ IDE MCP 설정
-
-**Cursor / VS Code 설정 파일 위치:**
-```
-~/Library/Application Support/Cursor/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json
-~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json
-```
-
-**IntelliJ AI Assistant 설정 파일 위치:**
-```
-~/Library/Application Support/JetBrains/IntelliJIdea<버전>/mcp_settings.json
-```
-
-**방법 A: uvx 사용 (설치 없이)**
-```json
-{
-  "mcpServers": {
-    "spring-db-tools": {
-      "command": "uvx",
-      "args": [
-        "mcp-spring-db-tools",
-        "/path/to/your-spring-project/src/main/resources/application.yml",
-        ""
-      ]
-    }
-  }
-}
-```
-
-**방법 B: pip 설치 후**
-```json
-{
-  "mcpServers": {
-    "spring-db-tools": {
-      "command": "mcp-spring-db-tools",
-      "args": [
-        "/path/to/your-spring-project/src/main/resources/application.yml",
-        ""
-      ]
-    }
-  }
-}
-```
-
-**Jasypt 사용 시 (기본 설정):**
-```json
-{
-  "mcpServers": {
-    "spring-db-tools": {
-      "command": "uvx",
-      "args": [
-        "mcp-spring-db-tools",
-        "/path/to/your-spring-project/src/main/resources/application.yml",
-        "your-jasypt-secret-key"
-      ]
-    }
-  }
-}
-```
-
-**Jasypt 고급 설정 (알고리즘 및 Salt 지정):**
 ```json
 {
   "mcpServers": {
@@ -127,92 +57,33 @@ pip install mcp-spring-db-tools
         "your-jasypt-secret-key",
         "PBEWithMD5AndDES",
         "your-fixed-salt"
-      ]
+      ],
+      "env": {
+        "DB_PASSWORD": "your_db_password_if_needed",
+        "ANY_ENV_VAR": "value"
+      }
     }
   }
 }
 ```
 
 **인자 설명:**
-- `args[0]`: `application.yml` 파일 경로 (필수)
-- `args[1]`: Jasypt 암호화 키 (선택, 기본값: 빈 문자열)
+- `args[0]`: `application.yml` (또는 `.properties`) 파일의 **절대 경로** (필수)
+- `args[1]`: Jasypt 암호화 키 (선택, 기본값: `""`)
 - `args[2]`: Jasypt 알고리즘 (선택, 기본값: `PBEWithMD5AndDES`)
-- `args[3]`: Jasypt Fixed Salt (선택, StringFixedSaltGenerator 사용 시)
+- `args[3]`: Jasypt Fixed Salt (선택, StringFixedSaltGenerator 사용 시 필요)
 
+**환경 변수 (`env`):**
+- Spring Boot 설정(`application.yml`)에서 `${DB_PASSWORD}`와 같이 환경 변수를 사용하는 경우, `env` 섹션에 해당 값을 정의할 수 있습니다.
 
-#### 3️⃣ IDE 재시작
+### IDE 재시작
 
-- IDE를 완전히 종료 후 다시 시작
-- AI Assistant에서 "데이터소스 목록을 알려줘" 같은 질문으로 테스트
-
----
-
-### 🔧 방법 2: 로컬에서 개발하며 사용
-
-#### 1️⃣ 소스 코드 받기
-
-```bash
-git clone <repository-url>
-cd mcp-spring-db-tools
-```
-
-#### 2️⃣ 개발 환경 설정
-
-```bash
-# 가상환경 생성 및 활성화
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 개발 모드로 설치
-pip install -e .
-
-# 테스트까지 돌리려면
-pip install -e ".[dev]"
-```
-
-#### 3️⃣ IDE MCP 설정
-
-**⚠️ 주의: 절대 경로 사용 필요!**
-
-```json
-{
-  "mcpServers": {
-    "spring-db-tools": {
-      "command": "/absolute/path/to/mcp-spring-db-tools/venv/bin/mcp-spring-db-tools",
-      "args": [
-        "/path/to/your-spring-project/src/main/resources/application.yml",
-        ""
-      ]
-    }
-  }
-}
-```
-
-**경로 확인 방법:**
-```bash
-# 프로젝트 디렉토리에서
-which mcp-spring-db-tools
-# 출력된 절대 경로를 복사해서 사용
-```
-
-#### 4️⃣ 개발 및 테스트
-
-```bash
-# 코드 수정
-vim mcp_spring_db_tools/server.py
-
-# 테스트 실행
-pytest tests/ -v
-
-# 커버리지 확인
-pytest tests/ --cov=mcp_spring_db_tools --cov-report=html
-```
-
-**자세한 테스트 방법:** [테스트 가이드](tests/LOCAL_TEST_GUIDE.md)
+설정 후 IDE를 재시작하거나 MCP 서버 목록을 새로 고침하여 활성화합니다.
 
 ---
 
-## 📁 지원하는 설정 파일 형식 (yml, properties)
+
+## 📁 파싱 가능한 applicaion.yml, application.properties 파일 형식
 
 ### 1. 단일 데이터소스
 
@@ -307,7 +178,7 @@ spring:
     password: ${DB_PASSWORD}
 ```
 
-### 6. SQLite 설정
+### 6. SQLite 인 경우 yaml 설정
 
 **파일 기반 SQLite:**
 ```yaml
@@ -325,17 +196,6 @@ spring:
     driver-class-name: org.sqlite.JDBC
 ```
 
-**💡 SQLite 특징:**
-- ✅ jar 파일 불필요 (Python 기본 내장 `sqlite3` 모듈 사용)
-- ✅ 파일 기반 DB로 별도 서버 실행 불필요
-- ✅ 테스트 및 개발 환경에 최적
-- ✅ 인덱스 정보 및 실행계획 분석 모두 지원
-- ✅ **상대 경로 자동 해석**: `./build/app.db` 같은 상대 경로는 프로젝트 루트 기준으로 자동 해석됩니다
-
-**⚙️ 경로 해석 방식:**
-- `application.yml`이 `src/main/resources/application.yml`에 위치한 경우, 프로젝트 루트를 자동으로 찾아 상대 경로를 해석합니다
-- 예: `jdbc:sqlite:./build/app.db` → `/project-root/build/app.db`로 변환
-
 ## 🔐 Jasypt 암호화 지원
 
 application.yml에서 `ENC()` 형식으로 암호화된 값을 자동으로 복호화합니다.
@@ -347,33 +207,7 @@ spring:
     password: ENC(Y7dT1gJ8nKoE4...)
 ```
 
-### 기본 설정 (RandomSaltGenerator)
-
-**MCP 설정:**
-```json
-{
-  "args": [
-    "/path/to/application.yml",
-    "your-jasypt-encryption-key"
-  ]
-}
-```
-
-### 고급 설정 (Fixed Salt)
-
-Java에서 `StringFixedSaltGenerator`를 사용하는 경우:
-
-**MCP 설정:**
-```json
-{
-  "args": [
-    "/path/to/application.yml",
-    "your-jasypt-encryption-key",
-    "PBEWithMD5AndDES",
-    "your-fixed-salt"
-  ]
-}
-```
+설정 방법은 상단의 [IDE MCP 설정](#ide-mcp-설정) 섹션을 참고하세요.
 
 ### 지원되는 알고리즘
 
@@ -385,6 +219,12 @@ Java에서 `StringFixedSaltGenerator`를 사용하는 경우:
 
 
 ---
+
+## 🛠️ 로컬 개발 및 테스트
+
+로컬 개발 환경 설정, 테스트 실행 방법, 그리고 개발 중인 내용을 직접 MCP로 연결하는 방법은 다음 문서를 참고하세요.
+
+[로컬 개발 가이드](tests/LOCAL_DEV_GUIDE.md)
 
 ## 📝 라이선스
 
