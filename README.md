@@ -52,6 +52,8 @@ IDE의 MCP 설정 파일에 다음과 같이 추가하여 사용합니다. `uvx`
     "spring-db-tools": {
       "command": "uvx",
       "args": [
+        "--from",
+        "git+https://github.com/yslee1126/spring-mcp-db-tools.git",
         "mcp-spring-db-tools",
         "/path/to/your-spring-project/src/main/resources/application.yml",
         "your-jasypt-secret-key",
@@ -60,23 +62,50 @@ IDE의 MCP 설정 파일에 다음과 같이 추가하여 사용합니다. `uvx`
         "1000"
       ],
       "env": {
-        "DB_PASSWORD": "your_db_password_if_needed",
-        "ANY_ENV_VAR": "value"
+        "DB_PASSWORD": "your_db_password",
+        "DB_USERNAME": "your_db_username"
       }
     }
   }
 }
 ```
 
+> 💡 `uvx --from git+<GitHub URL>` 형태로 GitHub 저장소를 직접 참조합니다. PyPI 미등록되었습니다.
+
 **인자 설명:**
-- `args[0]`: `application.yml` (또는 `.properties`) 파일의 **절대 경로** (필수)
-- `args[1]`: Jasypt 암호화 키 (선택, 기본값: `""`)
-- `args[2]`: Jasypt 알고리즘 (선택, 기본값: `PBEWithMD5AndDES`)
-- `args[3]`: Jasypt Fixed Salt (선택, StringFixedSaltGenerator 사용 시 필요)
-- `args[4]`: Jasypt Iterations (선택, 기본값: `1000`)
+
+| 순서 | 값 | 필수 여부 | 설명 |
+|------|-----|-----------|------|
+| 1 | `--from` | 필수 | uvx GitHub 직접 실행 옵션 |
+| 2 | `git+https://github.com/yslee1126/spring-mcp-db-tools.git` | 필수 | GitHub 저장소 주소 |
+| 3 | `mcp-spring-db-tools` | 필수 | 실행할 패키지(스크립트) 이름 |
+| 4 | `/path/to/application.yml` | 필수 | `application.yml` 또는 `.properties` 파일의 절대 경로 |
+| 5 | `your-jasypt-secret-key` | 선택 | Jasypt 암호화 키 (기본값: `""`) |
+| 6 | `PBEWithMD5AndDES` | 선택 | Jasypt 알고리즘 (기본값: `PBEWithMD5AndDES`) |
+| 7 | `your-fixed-salt` | 선택 | Jasypt Fixed Salt (StringFixedSaltGenerator 사용 시) |
+| 8 | `1000` | 선택 | Jasypt Iterations (기본값: `1000`) |
 
 **환경 변수 (`env`):**
-- Spring Boot 설정(`application.yml`)에서 `${DB_PASSWORD}`와 같이 환경 변수를 사용하는 경우, `env` 섹션에 해당 값을 정의할 수 있습니다.
+
+`application.yml`에서 `${변수명}` 형태로 참조하는 환경 변수가 있다면, `env` 섹션에 해당 변수명과 값을 그대로 정의하면 됩니다. 변수명은 프로젝트마다 다를 수 있으므로 `application.yml`에서 사용하는 이름을 그대로 사용하세요.
+
+```yaml
+# application.yml 예시
+spring:
+  datasource:
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    url: ${DATABASE_URL:jdbc:mysql://localhost:3306/mydb}
+```
+
+```json
+// mcp 설정의 env 예시
+"env": {
+  "DB_USERNAME": "myuser",
+  "DB_PASSWORD": "mypassword",
+  "DATABASE_URL": "jdbc:mysql://prod-host:3306/mydb"
+}
+```
 
 ### IDE 재시작
 
