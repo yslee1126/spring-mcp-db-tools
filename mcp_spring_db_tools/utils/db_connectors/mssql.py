@@ -169,12 +169,48 @@ class MSSQLConnector(DatabaseConnector):
             try:
                 cursor.execute("SET SHOWPLAN_TEXT ON")
                 cursor.execute(query)
-                result = cursor.fetchall()
+
+                # pymssql은 SET SHOWPLAN_TEXT ON 실행 후 실행계획이
+                # 여러 결과셋으로 분리될 수 있으므로 nextset()으로 모두 수집
+                plan_lines = []
+                while True:
+                    rows = cursor.fetchall()
+                    if rows:
+                        for r in rows:
+                            if 'StmtText' in r and r['StmtText']:
+                                plan_lines.append(r['StmtText'])
+                    if not cursor.nextset():
+                        break
+
                 cursor.execute("SET SHOWPLAN_TEXT OFF")
-                return "================================================================================\nEXECUTION PLAN\n================================================================================\n\n" + "\n".join([r['StmtText'] for r in result])
+
+                if plan_lines:
+                    return (
+                        "================================================================================\n"
+                        "EXECUTION PLAN\n"
+                        "================================================================================\n\n"
+                        + "\n".join(plan_lines)
+                    )
+                else:
+                    return (
+                        "================================================================================\n"
+                        "EXECUTION PLAN\n"
+                        "================================================================================\n\n"
+                        "(실행계획 결과가 비어 있습니다. SHOWPLAN 권한을 확인하거나 쿼리를 점검하세요.)"
+                    )
             except Exception as e:
-                try: cursor.execute("SET SHOWPLAN_TEXT OFF")
-                except: pass
+                try:
+                    cursor.execute("SET SHOWPLAN_TEXT OFF")
+                except Exception:
+                    pass
                 if "SHOWPLAN permission denied" in str(e) or "262" in str(e):
-                    return "================================================================================\n⚠️ 실행 계획 권한 부족 (Permission Denied)\n================================================================================\n\n현재 데이터베이스 사용자에게 'SHOWPLAN' 권한이 없어 실행 계획을 직접 추출할 수 없습니다.\n\n💡 대안 및 권장 사항:\n1. 테이블 스키마 조회 (`get_schema_info`)를 통해 인덱스 정보를 확인하세요.\n2. 쿼리 최적화 팁: SELECT * 자제, LIKE '%keyword%' 주의 등."
+                    return (
+                        "================================================================================\n"
+                        "⚠️ 실행 계획 권한 부족 (Permission Denied)\n"
+                        "================================================================================\n\n"
+                        "현재 데이터베이스 사용자에게 'SHOWPLAN' 권한이 없어 실행 계획을 직접 추출할 수 없습니다.\n\n"
+                        "💡 대안 및 권장 사항:\n"
+                        "1. 테이블 스키마 조회 (`get_schema_info`)를 통해 인덱스 정보를 확인하세요.\n"
+                        "2. 쿼리 최적화 팁: SELECT * 자제, LIKE '%keyword%' 주의 등."
+                    )
                 raise e
