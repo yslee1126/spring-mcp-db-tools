@@ -27,7 +27,8 @@ class ApplicationPropertiesParser:
         config_path: str,
         jasypt_key: str = None,
         jasypt_algorithm: str = "PBEWithMD5AndDES",
-        jasypt_salt: str = None
+        jasypt_salt: str = None,
+        jasypt_iterations: int = 1000
     ):
         """
         Initialize the parser.
@@ -37,15 +38,18 @@ class ApplicationPropertiesParser:
             jasypt_key: Optional JASYPT_KEY for decrypting encrypted values
             jasypt_algorithm: Jasypt encryption algorithm (default: PBEWithMD5AndDES)
             jasypt_salt: Optional fixed salt for StringFixedSaltGenerator
+            jasypt_iterations: Number of iterations for key derivation (default: 1000)
         """
         self.config_path = Path(config_path)
         self.jasypt_key = jasypt_key
         self.jasypt_algorithm = jasypt_algorithm
         self.jasypt_salt = jasypt_salt
+        self.jasypt_iterations = jasypt_iterations
         self.decryptor = JasyptDecryptor(
             jasypt_key,
             algorithm=jasypt_algorithm,
-            fixed_salt=jasypt_salt
+            fixed_salt=jasypt_salt,
+            iterations=jasypt_iterations
         ) if jasypt_key else None
         
         if not self.config_path.exists():

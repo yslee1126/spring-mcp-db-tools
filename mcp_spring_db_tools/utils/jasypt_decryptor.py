@@ -126,21 +126,55 @@ class JasyptDecryptor:
             # Decode base64
             encrypted_bytes = base64.b64decode(encrypted_value)
             
-            # Extract salt and ciphertext
+            # Extract salt, iv (if applicable), and ciphertext
             if self.fixed_salt is not None:
                 # Fixed salt mode: entire encrypted_bytes is ciphertext
                 salt = self.fixed_salt
+                iv = None
                 ciphertext = encrypted_bytes
             else:
-                # Random salt mode: first 8 bytes are salt
-                salt = encrypted_bytes[:8]
-                ciphertext = encrypted_bytes[8:]
+                # Random salt mode
+                if self.algorithm == "PBEWITHHMACSHA512ANDAES_256":
+                    # Structure: [16-byte Salt] + [16-byte IV] + [Ciphertext]
+                    salt = encrypted_bytes[:16]
+                    iv = encrypted_bytes[16:32]
+                    ciphertext = encrypted_bytes[32:]
+                else:
+                    # Legacy algorithms use 8-byte salt and derive IV
+                    salt = encrypted_bytes[:8]
+                    iv = None
+                    ciphertext = encrypted_bytes[8:]
             
-            # Derive key and IV based on algorithm
+            # Derive key (and IV if not already extracted)
             if self.algorithm in ["PBEWITHMD5ANDDES", "PBEWITHMD5ANDTRIPLEDES"]:
-                key, iv = self._derive_key_and_iv_md5(salt)
+                key, derived_iv = self._derive_key_and_iv_md5(salt)
+                iv = iv or derived_iv
             elif self.algorithm == "PBEWITHHMACSHA512ANDAES_256":
-                key, iv = self._derive_key_and_iv_hmac_sha512(salt)
+                # For AES-256, we only need the 32-byte key from PBKDF2
+                # if IV was already extracted from the data.
+                password_bytes = self.password.encode('utf-8')
+                kdf = PBKDF2HMAC(
+                    algorithm=hashes.SHA512(),
+                    length=32,  # Just 256-bit key
+                    salt=salt,
+                    iterations=self.iterations,
+                    backend=default_backend()
+                )
+                key = kdf.derive(password_bytes)
+                # If IV wasn't in the data (rare for this alg), derive it
+                if iv is None:
+                    # This case handles if someone used NoIvGenerator (not recommended)
+                    # or a derivation-based IV which is not standard for this Jasypt alg
+                    kdf_iv = PBKDF2HMAC(
+                        algorithm=hashes.SHA512(),
+                        length=48,
+                        salt=salt,
+                        iterations=self.iterations,
+                        backend=default_backend()
+                    )
+                    derived = kdf_iv.derive(password_bytes)
+                    key = derived[:32]
+                    iv = derived[32:48]
             else:
                 raise ValueError(f"Unsupported algorithm: {self.algorithm}")
             
@@ -148,13 +182,11 @@ class JasyptDecryptor:
             if self.algorithm == "PBEWITHMD5ANDDES":
                 # DES (single DES via TripleDES with repeated key)
                 cipher = Cipher(
-                    algorithms.TripleDES(key * 3),  # Expand 8-byte key to 24 bytes
+                    algorithms.TripleDES(key * 3),
                     modes.CBC(iv),
                     backend=default_backend()
                 )
             elif self.algorithm == "PBEWITHMD5ANDTRIPLEDES":
-                # Triple DES
-                # Need 24-byte key for TripleDES
                 if len(key) == 8:
                     key = key * 3
                 cipher = Cipher(
@@ -166,7 +198,7 @@ class JasyptDecryptor:
                 # AES-256
                 cipher = Cipher(
                     algorithms.AES(key),
-                    modes.CBC(iv[:16]),  # AES uses 16-byte IV
+                    modes.CBC(iv),
                     backend=default_backend()
                 )
             

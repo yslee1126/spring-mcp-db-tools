@@ -57,7 +57,8 @@ class SpringDBToolsServer:
         yaml_path: str,
         jasypt_key: str = "",
         jasypt_algorithm: str = "PBEWithMD5AndDES",
-        jasypt_salt: str = ""
+        jasypt_salt: str = "",
+        jasypt_iterations: int = 1000
     ):
         """
         Initialize the server with Spring Boot configuration.
@@ -67,11 +68,13 @@ class SpringDBToolsServer:
             jasypt_key: JASYPT_KEY for decryption (empty string if not needed)
             jasypt_algorithm: Jasypt encryption algorithm (default: PBEWithMD5AndDES)
             jasypt_salt: Fixed salt for StringFixedSaltGenerator (empty if RandomSaltGenerator)
+            jasypt_iterations: Number of iterations for key derivation (default: 1000)
         """
         self.yaml_path = yaml_path
         self.jasypt_key = jasypt_key if jasypt_key else None
         self.jasypt_algorithm = jasypt_algorithm
         self.jasypt_salt = jasypt_salt if jasypt_salt else None
+        self.jasypt_iterations = jasypt_iterations
         self.datasources: list[DataSourceConfig] = []
         self.connectors: dict[str, DatabaseConnector] = {}
         self.server = Server("mcp-spring-db-tools")
@@ -249,14 +252,16 @@ class SpringDBToolsServer:
                     self.yaml_path,
                     self.jasypt_key,
                     self.jasypt_algorithm,
-                    self.jasypt_salt
+                    self.jasypt_salt,
+                    self.jasypt_iterations
                 )
             else:
                 parser = ApplicationYamlParser(
                     self.yaml_path,
                     self.jasypt_key,
                     self.jasypt_algorithm,
-                    self.jasypt_salt
+                    self.jasypt_salt,
+                    self.jasypt_iterations
                 )
                 
             self.datasources = parser.parse()
@@ -397,14 +402,15 @@ def main():
     # Parse command line arguments with backward compatibility
     if len(sys.argv) < 3:
         print(
-            "Usage: mcp-spring-db-tools <application_yml_path> <jasypt_key> [jasypt_algorithm] [jasypt_salt]\n\n"
+            "Usage: mcp-spring-db-tools <application_yml_path> <jasypt_key> [jasypt_algorithm] [jasypt_salt] [jasypt_iterations]\n\n"
             "Arguments:\n"
             "  application_yml_path  Absolute path to Spring Boot application.yml\n"
             "  jasypt_key            JASYPT_KEY for decryption (use empty quotes \"\" if not encrypted)\n"
             "  jasypt_algorithm      Optional: Jasypt algorithm (default: PBEWithMD5AndDES)\n"
             "                        Supported: PBEWithMD5AndDES, PBEWithMD5AndTripleDES, PBEWITHHMACSHA512ANDAES_256\n"
             "  jasypt_salt           Optional: Fixed salt for StringFixedSaltGenerator\n"
-            "                        (leave empty for RandomSaltGenerator)\n\n"
+            "                        (leave empty for RandomSaltGenerator)\n"
+            "  jasypt_iterations     Optional: Number of iterations for key derivation (default: 1000)\n\n"
             "Examples:\n"
             "  # No encryption\n"
             '  mcp-spring-db-tools /path/to/application.yml ""\n\n'
@@ -413,7 +419,9 @@ def main():
             "  # Jasypt with custom algorithm and RandomSaltGenerator\n"
             '  mcp-spring-db-tools /path/to/application.yml "my-key" "PBEWithMD5AndTripleDES"\n\n'
             "  # Jasypt with FixedSaltGenerator\n"
-            '  mcp-spring-db-tools /path/to/application.yml "my-key" "PBEWithMD5AndDES" "my-salt"\n',
+            '  mcp-spring-db-tools /path/to/application.yml "my-key" "PBEWithMD5AndDES" "my-salt"\n'
+            "  # Jasypt with custom iterations\n"
+            '  mcp-spring-db-tools /path/to/application.yml "my-key" "PBEWITHHMACSHA512ANDAES_256" "" 10000\n',
             file=sys.stderr
         )
         sys.exit(1)
@@ -423,8 +431,16 @@ def main():
     jasypt_algorithm = sys.argv[3] if len(sys.argv) > 3 else "PBEWithMD5AndDES"
     jasypt_salt = sys.argv[4] if len(sys.argv) > 4 else ""
     
+    # New jasypt_iterations argument (5th argument)
+    jasypt_iterations = 1000
+    if len(sys.argv) > 5:
+        try:
+            jasypt_iterations = int(sys.argv[5])
+        except ValueError:
+            logger.warning(f"Invalid jasypt_iterations value: {sys.argv[5]}. Using default 1000.")
+    
     # Create and run server
-    server = SpringDBToolsServer(yaml_path, jasypt_key, jasypt_algorithm, jasypt_salt)
+    server = SpringDBToolsServer(yaml_path, jasypt_key, jasypt_algorithm, jasypt_salt, jasypt_iterations)
     asyncio.run(server.run())
 
 

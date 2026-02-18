@@ -56,7 +56,8 @@ IDE의 MCP 설정 파일에 다음과 같이 추가하여 사용합니다. `uvx`
         "/path/to/your-spring-project/src/main/resources/application.yml",
         "your-jasypt-secret-key",
         "PBEWithMD5AndDES",
-        "your-fixed-salt"
+        "your-fixed-salt",
+        "1000"
       ],
       "env": {
         "DB_PASSWORD": "your_db_password_if_needed",
@@ -72,6 +73,7 @@ IDE의 MCP 설정 파일에 다음과 같이 추가하여 사용합니다. `uvx`
 - `args[1]`: Jasypt 암호화 키 (선택, 기본값: `""`)
 - `args[2]`: Jasypt 알고리즘 (선택, 기본값: `PBEWithMD5AndDES`)
 - `args[3]`: Jasypt Fixed Salt (선택, StringFixedSaltGenerator 사용 시 필요)
+- `args[4]`: Jasypt Iterations (선택, 기본값: `1000`)
 
 **환경 변수 (`env`):**
 - Spring Boot 설정(`application.yml`)에서 `${DB_PASSWORD}`와 같이 환경 변수를 사용하는 경우, `env` 섹션에 해당 값을 정의할 수 있습니다.
