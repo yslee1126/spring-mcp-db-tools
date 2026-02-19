@@ -40,10 +40,6 @@ IDE의 MCP 설정 파일에 다음과 같이 추가하여 사용합니다. `uvx`
 
 ### IDE MCP 설정
 
-**설정 파일 위치:**
-- **Cursor / VS Code:** `~/Library/Application Support/Cursor(혹은 Code)/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
-- **IntelliJ AI Assistant:** `~/Library/Application Support/JetBrains/IntelliJIdea<버전>/mcp_settings.json`
-
 **설정 예시 (JSON):**
 
 ```json
