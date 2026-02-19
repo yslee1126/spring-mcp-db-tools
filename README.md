@@ -27,7 +27,7 @@ Spring Boot 프로젝트의 데이터베이스 스키마 조회 및 쿼리 실�
 
 ## 📋 지원 데이터베이스
 
-- ✅ MySQL / MariaDB
+- ✅ MySQL / MariaDB (MySQL 8.0.16+ 권장: 실행 계획 트리 형식 지원)
 - ✅ PostgreSQL
 - ✅ MSSQL
 - ✅ SQLite

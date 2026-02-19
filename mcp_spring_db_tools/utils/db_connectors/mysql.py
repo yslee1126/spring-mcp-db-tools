@@ -159,29 +159,63 @@ class MySQLConnector(DatabaseConnector):
 
     def get_execution_plan(self, query: str) -> str:
         """Get MySQL execution plan using EXPLAIN."""
+        import logging
+        logger = logging.getLogger(__name__)
+
         with self._connection.cursor() as cursor:
+
+            # 1순위: EXPLAIN ANALYZE (MySQL 8.0+ - 실제 실행 통계 + 트리 형태)
             try:
                 cursor.execute(f"EXPLAIN ANALYZE {query}")
-                result = cursor.fetchall()
-                return self._format_explain_result(result, 'analyze')
-            except Exception:
-                cursor.execute(f"EXPLAIN {query}")
-                result = cursor.fetchall()
-                return self._format_explain_result(result, 'basic')
-    
-    def _format_explain_result(self, result: list, mode: str) -> str:
-        """Format EXPLAIN result for display."""
-        if mode == 'analyze':
-            return '\n'.join([str(row) for row in result])
-        
-        lines = ["=" * 80, "EXECUTION PLAN", "=" * 80]
+                rows = cursor.fetchall()
+                if rows:
+                    first_value = next(iter(rows[0].values()))
+                    if first_value:
+                        # bytes로 반환될 경우 디코딩
+                        if isinstance(first_value, (bytes, bytearray)):
+                            return first_value.decode('utf-8')
+                        return str(first_value)
+                logger.info("[EXPLAIN ANALYZE] 결과 없음, FORMAT=TREE로 폴백")
+            except Exception as e:
+                logger.info(f"[EXPLAIN ANALYZE] 실패 → FORMAT=TREE로 폴백: {type(e).__name__}: {e}")
+
+            # 2순위: EXPLAIN FORMAT=TREE (MySQL 8.0+ - 트리 형태, 쿼리 실행 없음)
+            try:
+                cursor.execute(f"EXPLAIN FORMAT=TREE {query}")
+                rows = cursor.fetchall()
+                if rows:
+                    first_value = next(iter(rows[0].values()))
+                    if first_value:
+                        if isinstance(first_value, (bytes, bytearray)):
+                            return first_value.decode('utf-8')
+                        return str(first_value)
+                logger.info("[EXPLAIN FORMAT=TREE] 결과 없음, 기본 EXPLAIN으로 폴백")
+            except Exception as e:
+                logger.info(f"[EXPLAIN FORMAT=TREE] 실패 → 기본 EXPLAIN으로 폴백: {type(e).__name__}: {e}")
+
+            # 3순위: 기본 EXPLAIN (구버전 MySQL / MariaDB 호환)
+            logger.info("[EXPLAIN] 기본 테이블 형식으로 출력")
+            cursor.execute(f"EXPLAIN {query}")
+            rows = cursor.fetchall()
+            return self._format_explain_basic(rows)
+
+
+
+    def _format_explain_basic(self, result: list) -> str:
+        """구버전 MySQL 전용 fallback: 기본 EXPLAIN 테이블 형식 출력."""
+        lines = ["id | select_type | table | type | key | ref | rows | filtered | Extra"]
+        lines.append("-" * 100)
         for row in result:
-            lines.append(f"\nTable: {row.get('table', 'N/A')}")
-            lines.append(f"  Type: {row.get('type', 'N/A')}")
-            lines.append(f"  Possible Keys: {row.get('possible_keys', 'N/A')}")
-            lines.append(f"  Key: {row.get('key', 'N/A')}")
-            lines.append(f"  Key Length: {row.get('key_len', 'N/A')}")
-            lines.append(f"  Rows: {row.get('rows', 'N/A')}")
-            lines.append(f"  Filtered: {row.get('filtered', 'N/A')}%")
-            lines.append(f"  Extra: {row.get('Extra', 'N/A')}")
+            lines.append(
+                f"{row.get('id','')!s:>2} | "
+                f"{row.get('select_type','')!s:<12} | "
+                f"{row.get('table','')!s:<15} | "
+                f"{row.get('type','')!s:<8} | "
+                f"{row.get('key') or 'NULL'!s:<30} | "
+                f"{row.get('ref') or 'NULL'!s:<20} | "
+                f"{row.get('rows','')!s:>6} | "
+                f"{row.get('filtered','')!s:>8}% | "
+                f"{row.get('Extra') or ''}"
+            )
         return '\n'.join(lines)
+
