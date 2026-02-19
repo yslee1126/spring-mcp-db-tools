@@ -200,7 +200,7 @@ class ApplicationYamlParser:
         
         return re.sub(pattern, replace_match, value)
     
-    def _decrypt_value(self, value: str) -> str:
+    def _decrypt_value(self, value) -> str:
         """
         Decrypt a value if it's Jasypt-encrypted and a key is available.
         
@@ -208,10 +208,14 @@ class ApplicationYamlParser:
             value: The value to potentially decrypt
             
         Returns:
-            Decrypted or original value
+            Decrypted or original value (always str)
         """
+        # YAML이 숫자(password: 1234)를 int로 파싱하는 경우를 방어
+        # None이면 빈 문자열, 그 외 비-문자열은 str로 변환
+        if value is None:
+            return ''
         if not isinstance(value, str):
-            return value
+            return str(value)
             
         # First resolve environment variables
         value = self._resolve_env_variables(value)
@@ -264,9 +268,9 @@ class ApplicationYamlParser:
             DataSourceConfig object
         """
         url = self._decrypt_value(ds_config.get('url', ds_config.get('jdbc-url', '')))
-        username = self._decrypt_value(ds_config.get('username', ''))
+        username = self._decrypt_value(ds_config.get('username', ds_config.get('user', '')))
         password = self._decrypt_value(ds_config.get('password', ''))
-        driver_class = ds_config.get('driver-class-name', ds_config.get('driverClassName', ''))
+        driver_class = str(ds_config.get('driver-class-name', ds_config.get('driverClassName', '')) or '')
         
         db_type = self._detect_db_type(url, driver_class)
         
